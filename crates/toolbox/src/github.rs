@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
 use clap::Args;
@@ -98,7 +99,7 @@ fn create_jwt(app_id: u64, private_key: &str) -> Result<String> {
     let now = OffsetDateTime::now_utc().unix_timestamp();
     let claims = Claims {
         iat: now - 60,
-        exp: now + 9 * 60,
+        exp: now + 8 * 60,
         iss: app_id.to_string(),
     };
 
@@ -115,11 +116,12 @@ fn create_installation_token(args: &AppAuthArgs, jwt: &str) -> Result<String> {
         args.installation_id
     );
     let body = TokenRequest {
-        repositories: args.repositories.clone(),
+        repositories: repository_names(&args.repositories),
     };
 
     let client = Client::builder()
         .default_headers(default_headers(jwt)?)
+        .timeout(Duration::from_secs(30))
         .build()
         .context("failed to build GitHub API client")?;
 
@@ -169,12 +171,38 @@ fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
+fn repository_names(repositories: &[String]) -> Vec<String> {
+    repositories
+        .iter()
+        .map(|repository| {
+            repository
+                .rsplit_once('/')
+                .map_or(repository.as_str(), |(_, name)| name)
+                .to_string()
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::shell_quote;
+    use super::{repository_names, shell_quote};
 
     #[test]
     fn quotes_token_for_posix_shell() {
         assert_eq!(shell_quote("abc'def"), "'abc'\\''def'");
+    }
+
+    #[test]
+    fn extracts_repository_names_for_installation_token_request() {
+        let repositories = vec![
+            "joonjeong/toolbox".to_string(),
+            "plain-repo".to_string(),
+            "owner/nested/name".to_string(),
+        ];
+
+        assert_eq!(
+            repository_names(&repositories),
+            vec!["toolbox", "plain-repo", "name"]
+        );
     }
 }

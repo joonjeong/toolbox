@@ -40,6 +40,10 @@ where
     T: Into<OsString>,
 {
     let mut args: Vec<OsString> = args.into_iter().map(Into::into).collect();
+    if args.is_empty() {
+        args.push(OsString::from("toolbox"));
+    }
+
     let invoked_as = args
         .first()
         .and_then(|arg| Path::new(arg).file_name())
