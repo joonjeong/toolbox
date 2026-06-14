@@ -58,7 +58,7 @@ Useful options:
 ## Releases
 
 The release workflow creates HeadVer-tagged GitHub releases and uploads
-`toolbox` binaries for Linux x86_64, macOS x86_64, and macOS aarch64.
+`toolbox` binaries for Linux amd64, Linux arm64, and macOS arm64.
 
 The weekly release workflow runs every Sunday at 10:00 KST and creates a
 [HeadVer](https://github.com/line/headver) release from the default branch. Until
