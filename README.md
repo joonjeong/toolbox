@@ -46,6 +46,7 @@ eval "$(toolbox github app-auth --shell \
 Supported environment variables:
 
 - `GITHUB_APP_ID`
+- `GITHUB_APP_INSTALLATION_ID`
 - `GITHUB_APP_PRIVATE_KEY_FILE`
 - `GITHUB_APP_PRIVATE_KEY_PATH`
 - `GITHUB_APP_PRIVATE_KEY`
@@ -55,6 +56,8 @@ Useful options:
 
 - `--repo OWNER/REPO` discovers the app installation from the repository and
   scopes the token to that repository.
+- `--installation-id ID` skips repository installation discovery when the
+  installation ID is already known.
 - `--repository OWNER/REPO` limits the token to one or more additional
   repositories.
 - `--permission key=value` limits token permissions, for example

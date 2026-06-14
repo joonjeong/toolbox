@@ -47,6 +47,7 @@ Examples:
 
 Environment:
   GITHUB_APP_ID
+  GITHUB_APP_INSTALLATION_ID
   GITHUB_APP_PRIVATE_KEY_FILE
   GITHUB_APP_PRIVATE_KEY_PATH
   GITHUB_APP_PRIVATE_KEY
@@ -65,10 +66,11 @@ pub struct AppAuthArgs {
     #[arg(long, env = "GITHUB_APP_ID")]
     app_id: u64,
 
-    /// GitHub App installation ID. Hidden advanced escape hatch.
+    /// GitHub App installation ID.
     ///
-    /// Can also be set with GITHUB_APP_INSTALLATION_ID. Prefer --repo OWNER/REPO.
-    #[arg(long, env = "GITHUB_APP_INSTALLATION_ID", hide = true, hide_env = true)]
+    /// Can also be set with GITHUB_APP_INSTALLATION_ID. Prefer --repo OWNER/REPO
+    /// unless the installation ID is already known.
+    #[arg(long, env = "GITHUB_APP_INSTALLATION_ID")]
     installation_id: Option<u64>,
 
     /// Path to the GitHub App private key PEM file.

@@ -220,6 +220,8 @@ toolbox github app-auth \
 - `--api-url` or `GITHUB_API_URL`: override for GitHub Enterprise Server.
 - `--repo OWNER/REPO`: discover the app installation and scope the token to
   that repository.
+- `--installation-id`: use a known installation ID and skip repository
+  installation discovery.
 - `--shell`: print `export GITHUB_TOKEN=...` instead of the raw token.
 - `--export-gh-token`: with `--shell`, also print `export GH_TOKEN=...`.
 - `--format json`: print structured JSON output instead of the raw token or JWT.

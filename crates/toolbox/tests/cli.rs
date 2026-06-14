@@ -47,9 +47,11 @@ fn shows_github_app_auth_agent_usage() {
                 .and(predicate::str::contains("GITHUB_APP_PRIVATE_KEY_PATH"))
                 .and(predicate::str::contains("--repo <OWNER/REPO>"))
                 .and(predicate::str::contains("--repository <OWNER/REPO>"))
-                .and(predicate::str::contains("only repository names are sent"))
-                .and(predicate::str::contains("--installation-id").not())
-                .and(predicate::str::contains("GITHUB_APP_INSTALLATION_ID").not()),
+                .and(predicate::str::contains(
+                    "--installation-id <INSTALLATION_ID>",
+                ))
+                .and(predicate::str::contains("GITHUB_APP_INSTALLATION_ID"))
+                .and(predicate::str::contains("only repository names are sent")),
         );
 }
 
