@@ -318,12 +318,7 @@ fn resolve_installation_id(args: &AppAuthArgs, client: &Client) -> Result<u64> {
     discover_installation_id(args, client, repo)
 }
 
-fn discover_installation_id(
-    args: &AppAuthArgs,
-    _jwt: &str,
-    client: &Client,
-    repo: &str,
-) -> Result<u64> {
+fn discover_installation_id(args: &AppAuthArgs, client: &Client, repo: &str) -> Result<u64> {
     let (owner, name) = repo.split_once('/').ok_or_else(|| {
         anyhow!("--repo must be OWNER/REPO so the GitHub installation can be discovered")
     })?;
