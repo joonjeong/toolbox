@@ -9,6 +9,13 @@ use crate::github;
 #[derive(Debug, Parser)]
 #[command(name = "toolbox")]
 #[command(about = "Personal general-purpose CLI/TUI toolbox")]
+#[command(after_long_help = "Invocation forms:
+  toolbox github app-auth ...
+  toolbox github-app-auth ...
+  github-app-auth ...        when symlinked to the toolbox binary
+  toolbox github agent-skill --install-path DIR ...
+
+Run `toolbox github app-auth --help` for GitHub App authentication options and examples.")]
 pub struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -20,9 +27,12 @@ enum Command {
     Github(GithubCommand),
     /// Authenticate as a GitHub App installation.
     GithubAppAuth(github::AppAuthArgs),
+    /// Create the GitHub App agent workflow skill.
+    GithubAgentSkill(github::AppAgentWorkflowSkillArgs),
 }
 
 #[derive(Debug, Args)]
+#[command(about = "GitHub related tools")]
 struct GithubCommand {
     #[command(subcommand)]
     command: GithubSubcommand,
@@ -32,6 +42,8 @@ struct GithubCommand {
 enum GithubSubcommand {
     /// Authenticate as a GitHub App installation.
     AppAuth(github::AppAuthArgs),
+    /// Create the GitHub App agent workflow skill.
+    AgentSkill(github::AppAgentWorkflowSkillArgs),
 }
 
 pub fn run<I, T>(args: I) -> Result<()>
@@ -48,17 +60,29 @@ where
         .first()
         .and_then(|arg| Path::new(arg).file_name())
         .and_then(OsStr::to_str)
-        .unwrap_or("toolbox");
+        .unwrap_or("toolbox")
+        .to_string();
 
-    if matches!(invoked_as, "github-app-auth" | "toolbox-github-app-auth") {
+    if matches!(
+        invoked_as.as_str(),
+        "github-app-auth" | "toolbox-github-app-auth"
+    ) {
         args.insert(1, OsString::from("github-app-auth"));
+    }
+    if matches!(
+        invoked_as.as_str(),
+        "github-agent-skill" | "toolbox-github-agent-skill"
+    ) {
+        args.insert(1, OsString::from("github-agent-skill"));
     }
 
     let cli = Cli::parse_from(args);
     match cli.command {
         Command::Github(github_command) => match github_command.command {
             GithubSubcommand::AppAuth(args) => github::app_auth(args),
+            GithubSubcommand::AgentSkill(args) => github::create_app_agent_workflow_skill(args),
         },
         Command::GithubAppAuth(args) => github::app_auth(args),
+        Command::GithubAgentSkill(args) => github::create_app_agent_workflow_skill(args),
     }
 }
