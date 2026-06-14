@@ -43,6 +43,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ "$(git rev-parse --is-shallow-repository 2>/dev/null)" == "true" ]]; then
+  echo "error: shallow clone detected; full history and tags are required to detect weekly release changes." >&2
+  echo "Configure actions/checkout with fetch-depth: 0 before running this script." >&2
+  exit 1
+fi
+
 target_sha="$(git rev-parse "${target_ref}^{commit}")"
 merged_tags="$(git tag --merged "${target_sha}" --list "${tag_pattern}" --sort=-v:refname)"
 latest_tag="${merged_tags%%$'\n'*}"
