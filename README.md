@@ -55,6 +55,12 @@ Useful options:
 - `--repository OWNER/REPO` limits the token to one or more repositories.
 - `--jwt-only` prints the signed GitHub App JWT without exchanging it.
 
+## Skills
+
+Agent-facing skills live under `skills/`. The `github-app-auth` skill describes
+how an agent can use `toolbox github app-auth` with `gh` without exposing or
+persisting temporary GitHub App installation tokens.
+
 ## Releases
 
 The release workflow creates HeadVer-tagged GitHub releases and uploads

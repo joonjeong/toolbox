@@ -1,0 +1,4 @@
+interface:
+  display_name: "GitHub App Auth"
+  short_description: "Use GitHub App tokens safely with gh"
+  default_prompt: "Use $github-app-auth to run gh with a short-lived GitHub App installation token without exposing or persisting the token."
