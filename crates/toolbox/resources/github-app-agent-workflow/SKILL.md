@@ -42,8 +42,7 @@ toolbox github agent-skill --install-path /path/to/skills
 Provide:
 
 - `--app-id` or `GITHUB_APP_ID`
-- `--installation-id` or `GITHUB_APP_INSTALLATION_ID`, unless using
-  `--repo OWNER/REPO` discovery
+- `--repo OWNER/REPO`
 - exactly one private key source:
   - `--private-key-file` or `GITHUB_APP_PRIVATE_KEY_FILE`
   - `--private-key-path` or `GITHUB_APP_PRIVATE_KEY_PATH`
@@ -219,10 +218,8 @@ toolbox github app-auth \
 ## Options To Remember
 
 - `--api-url` or `GITHUB_API_URL`: override for GitHub Enterprise Server.
-- `--repo OWNER/REPO`: discover the installation ID and scope the token to that
-  repository.
-- `--installation-id`: use a known installation ID and skip repository
-  installation discovery.
+- `--repo OWNER/REPO`: discover the app installation and scope the token to
+  that repository.
 - `--shell`: print `export GITHUB_TOKEN=...` instead of the raw token.
 - `--export-gh-token`: with `--shell`, also print `export GH_TOKEN=...`.
 - `--format json`: print structured JSON output instead of the raw token or JWT.

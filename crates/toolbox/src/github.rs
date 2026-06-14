@@ -20,7 +20,7 @@ const APP_AGENT_WORKFLOW_SKILL: &str =
     about = "Authenticate as a GitHub App installation",
     long_about = "Sign a GitHub App JWT, exchange it for an installation access token, and print the token to stdout.
 
-Use this command from coding agents or automation that need temporary GitHub repository access through a GitHub App installation. Provide the app ID and exactly one private key source: --private-key-file or --private-key. Provide --installation-id, or pass --repo OWNER/REPO to discover the installation from the repository. Values can also come from the documented environment variables.",
+Use this command from coding agents or automation that need temporary GitHub repository access through a GitHub App installation. Provide the app ID, --repo OWNER/REPO, and exactly one private key source: --private-key-file or --private-key. Values can also come from the documented environment variables.",
     after_long_help = "Purpose:
   Sign a GitHub App JWT, exchange it for an installation access token, and print the token to stdout. Use this from coding agents or automation that need temporary GitHub repository access through a GitHub App installation.
 
@@ -47,7 +47,6 @@ Examples:
 
 Environment:
   GITHUB_APP_ID
-  GITHUB_APP_INSTALLATION_ID
   GITHUB_APP_PRIVATE_KEY_FILE
   GITHUB_APP_PRIVATE_KEY_PATH
   GITHUB_APP_PRIVATE_KEY
@@ -57,7 +56,7 @@ Output:
   By default, prints only the installation token. With --format json, prints structured JSON. With --shell, prints a POSIX shell export statement for GITHUB_TOKEN. Add --export-gh-token to --shell to export GH_TOKEN too. With --jwt-only, prints the signed GitHub App JWT and does not call the installation token API.
 
 Repository scoping:
-  Use --repo OWNER/REPO to discover the installation ID and scope the token to that repository. Repeat --repository to limit the token to additional repositories. OWNER/REPO is accepted for user-facing clarity; only repository names are sent to GitHub's installation token API."
+  Use --repo OWNER/REPO to discover the installation and scope the token to that repository. Repeat --repository to limit the token to additional repositories. OWNER/REPO is accepted for user-facing clarity; only repository names are sent to GitHub's installation token API."
 )]
 pub struct AppAuthArgs {
     /// GitHub App ID.
@@ -66,12 +65,10 @@ pub struct AppAuthArgs {
     #[arg(long, env = "GITHUB_APP_ID")]
     app_id: u64,
 
-    /// GitHub App installation ID.
+    /// GitHub App installation ID. Hidden advanced escape hatch.
     ///
-    /// Can also be set with GITHUB_APP_INSTALLATION_ID. Not required with
-    /// --jwt-only. If omitted for token exchange, pass --repo OWNER/REPO so
-    /// the installation can be discovered.
-    #[arg(long, env = "GITHUB_APP_INSTALLATION_ID")]
+    /// Can also be set with GITHUB_APP_INSTALLATION_ID. Prefer --repo OWNER/REPO.
+    #[arg(long, env = "GITHUB_APP_INSTALLATION_ID", hide = true, hide_env = true)]
     installation_id: Option<u64>,
 
     /// Path to the GitHub App private key PEM file.
@@ -123,11 +120,15 @@ pub struct AppAuthArgs {
     #[arg(long = "repository", value_name = "OWNER/REPO")]
     repositories: Vec<String>,
 
-    /// Repository used to discover the installation ID and scope the token.
+    /// Repository used to discover the installation and scope the token.
     ///
-    /// Pass OWNER/REPO. If --installation-id is omitted, this calls GitHub's
-    /// repository installation API with the app JWT before creating the token.
-    #[arg(long = "repo", value_name = "OWNER/REPO")]
+    /// Pass OWNER/REPO. This calls GitHub's repository installation API with
+    /// the app JWT before creating the token.
+    #[arg(
+        long = "repo",
+        value_name = "OWNER/REPO",
+        required_unless_present_any = ["jwt_only", "installation_id"]
+    )]
     repo: Option<String>,
 
     /// Limit installation token permissions.
@@ -312,9 +313,10 @@ fn resolve_installation_id(args: &AppAuthArgs, client: &Client) -> Result<u64> {
         return Ok(installation_id);
     }
 
-    let repo = args.repo.as_deref().ok_or_else(|| {
-        anyhow!("missing installation id; set --installation-id, GITHUB_APP_INSTALLATION_ID, or --repo OWNER/REPO")
-    })?;
+    let repo = args
+        .repo
+        .as_deref()
+        .ok_or_else(|| anyhow!("missing repository; set --repo OWNER/REPO"))?;
     discover_installation_id(args, client, repo)
 }
 

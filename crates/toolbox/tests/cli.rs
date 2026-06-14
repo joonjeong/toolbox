@@ -47,7 +47,9 @@ fn shows_github_app_auth_agent_usage() {
                 .and(predicate::str::contains("GITHUB_APP_PRIVATE_KEY_PATH"))
                 .and(predicate::str::contains("--repo <OWNER/REPO>"))
                 .and(predicate::str::contains("--repository <OWNER/REPO>"))
-                .and(predicate::str::contains("only repository names are sent")),
+                .and(predicate::str::contains("only repository names are sent"))
+                .and(predicate::str::contains("--installation-id").not())
+                .and(predicate::str::contains("GITHUB_APP_INSTALLATION_ID").not()),
         );
 }
 
@@ -74,12 +76,29 @@ fn github_app_auth_requires_private_key() {
         "app-auth",
         "--app-id",
         "1",
-        "--installation-id",
-        "2",
+        "--repo",
+        "OWNER/REPO",
     ])
     .assert()
     .failure()
     .stderr(predicate::str::contains("missing private key"));
+}
+
+#[test]
+fn github_app_auth_requires_repo_for_token_exchange() {
+    let mut cmd = Command::cargo_bin("toolbox").expect("binary exists");
+
+    cmd.args([
+        "github",
+        "app-auth",
+        "--app-id",
+        "1",
+        "--private-key",
+        TEST_RSA_PRIVATE_KEY,
+    ])
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains("--repo <OWNER/REPO>"));
 }
 
 #[test]
@@ -130,8 +149,8 @@ fn github_app_auth_shell_can_export_gh_token_too() {
         "--export-gh-token",
         "--app-id",
         "1",
-        "--installation-id",
-        "2",
+        "--repo",
+        "OWNER/REPO",
     ])
     .assert()
     .failure()
