@@ -24,11 +24,16 @@ fn shows_top_level_help() {
 #[test]
 fn shows_version() {
     let mut cmd = Command::cargo_bin("toolbox").expect("binary exists");
+    let assert = cmd.arg("--version").assert().success();
 
-    cmd.arg("--version")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains(env!("CARGO_PKG_VERSION")));
+    if let Some(toolbox_version) = option_env!("TOOLBOX_VERSION") {
+        assert.stdout(
+            predicate::str::contains(env!("CARGO_PKG_VERSION"))
+                .or(predicate::str::contains(toolbox_version)),
+        );
+    } else {
+        assert.stdout(predicate::str::contains(env!("CARGO_PKG_VERSION")));
+    }
 }
 
 #[test]
@@ -41,17 +46,21 @@ fn shows_github_app_auth_agent_usage() {
         .stdout(
             predicate::str::contains("Sign a GitHub App JWT")
                 .and(predicate::str::contains(
-                    "eval \"$(toolbox github app-auth --shell",
+                    "export GH_TOKEN=\"$(toolbox github app-auth",
                 ))
                 .and(predicate::str::contains("GITHUB_APP_PRIVATE_KEY_FILE"))
                 .and(predicate::str::contains("GITHUB_APP_PRIVATE_KEY_PATH"))
                 .and(predicate::str::contains("--repo <OWNER/REPO>"))
-                .and(predicate::str::contains("--repository <OWNER/REPO>"))
                 .and(predicate::str::contains(
                     "--installation-id <INSTALLATION_ID>",
                 ))
                 .and(predicate::str::contains("GITHUB_APP_INSTALLATION_ID"))
-                .and(predicate::str::contains("only repository names are sent")),
+                .and(predicate::str::contains("Repeat for multiple repositories"))
+                .and(predicate::str::contains("only repository names are sent"))
+                .and(predicate::str::contains("--repository").not())
+                .and(predicate::str::contains("--shell").not())
+                .and(predicate::str::contains("--export-gh-token").not())
+                .and(predicate::str::contains("--include-token").not()),
         );
 }
 
@@ -138,25 +147,6 @@ fn github_app_auth_jwt_only_can_print_json() {
     .assert()
     .success()
     .stdout(predicate::str::starts_with("{\"jwt\":\"eyJ").and(predicate::str::contains("\"}")));
-}
-
-#[test]
-fn github_app_auth_shell_can_export_gh_token_too() {
-    let mut cmd = Command::cargo_bin("toolbox").expect("binary exists");
-
-    cmd.args([
-        "github",
-        "app-auth",
-        "--shell",
-        "--export-gh-token",
-        "--app-id",
-        "1",
-        "--repo",
-        "OWNER/REPO",
-    ])
-    .assert()
-    .failure()
-    .stderr(predicate::str::contains("missing private key"));
 }
 
 #[test]

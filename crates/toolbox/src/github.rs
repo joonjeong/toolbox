@@ -35,10 +35,9 @@ Examples:
     --repo OWNER/REPO \\
     --private-key-file /path/to/private-key.pem
 
-  eval \"$(toolbox github app-auth --shell \\
+  export GH_TOKEN=\"$(toolbox github app-auth \\
     --repo OWNER/REPO \\
     --app-id \"$GITHUB_APP_ID\" \\
-    --export-gh-token \\
     --private-key-file /path/to/private-key.pem)\"
 
   toolbox github-app-auth --jwt-only \\
@@ -54,10 +53,10 @@ Environment:
   GITHUB_API_URL
 
 Output:
-  By default, prints only the installation token. With --format json, prints structured JSON. With --shell, prints a POSIX shell export statement for GITHUB_TOKEN. Add --export-gh-token to --shell to export GH_TOKEN too. With --jwt-only, prints the signed GitHub App JWT and does not call the installation token API.
+  By default, prints only the installation token. Use shell-native command substitution, for example export GH_TOKEN=\"$(toolbox github app-auth ...)\", when a caller needs an environment variable. With --format json, prints structured diagnostic JSON without the token. With --jwt-only, prints the signed GitHub App JWT and does not call the installation token API.
 
 Repository scoping:
-  Use --repo OWNER/REPO to discover the installation and scope the token to that repository. Repeat --repository to limit the token to additional repositories. OWNER/REPO is accepted for user-facing clarity; only repository names are sent to GitHub's installation token API."
+  Use --repo OWNER/REPO to scope the token to one or more repositories. Repeat --repo for multiple repositories. When --installation-id is omitted, the first --repo value is also used to discover the installation. OWNER/REPO is accepted for user-facing clarity; only repository names are sent to GitHub's installation token API."
 )]
 pub struct AppAuthArgs {
     /// GitHub App ID.
@@ -115,23 +114,18 @@ pub struct AppAuthArgs {
     #[arg(long, env = "GITHUB_API_URL", default_value = "https://api.github.com")]
     api_url: String,
 
-    /// Limit the installation token to a repository.
+    /// Scope the token to a repository.
     ///
-    /// Repeat for multiple repositories. OWNER/REPO is accepted for user-facing
-    /// clarity, but only REPO is sent to GitHub's installation token API.
-    #[arg(long = "repository", value_name = "OWNER/REPO")]
-    repositories: Vec<String>,
-
-    /// Repository used to discover the installation and scope the token.
-    ///
-    /// Pass OWNER/REPO. This calls GitHub's repository installation API with
-    /// the app JWT before creating the token.
+    /// Repeat for multiple repositories. Without --installation-id, the first
+    /// --repo value is also used to discover the installation. Public repository
+    /// access alone is not enough; the GitHub App must be installed on the repo
+    /// or owner.
     #[arg(
         long = "repo",
         value_name = "OWNER/REPO",
         required_unless_present_any = ["jwt_only", "installation_id"]
     )]
-    repo: Option<String>,
+    repos: Vec<String>,
 
     /// Limit installation token permissions.
     ///
@@ -141,24 +135,14 @@ pub struct AppAuthArgs {
     permissions: Vec<PermissionArg>,
 
     /// Output format.
-    #[arg(long, value_enum, default_value_t = OutputFormat::Text, conflicts_with = "shell")]
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     format: OutputFormat,
-
-    /// Emit `export GITHUB_TOKEN=...` instead of the raw token.
-    ///
-    /// Intended for `eval "$(toolbox github app-auth --shell ...)"`.
-    #[arg(long)]
-    shell: bool,
-
-    /// With --shell, export GH_TOKEN in addition to GITHUB_TOKEN.
-    #[arg(long, requires = "shell")]
-    export_gh_token: bool,
 
     /// Print the signed GitHub App JWT and skip token exchange.
     ///
     /// Useful for debugging app authentication. The JWT is intentionally short
     /// lived and remains below GitHub's 10-minute maximum.
-    #[arg(long, conflicts_with_all = ["shell", "repositories", "repo", "permissions"])]
+    #[arg(long, conflicts_with_all = ["repos", "permissions"])]
     jwt_only: bool,
 }
 
@@ -212,6 +196,17 @@ struct TokenRequest {
 struct TokenResponse {
     token: String,
     expires_at: Option<String>,
+    repository_selection: Option<String>,
+    #[serde(default)]
+    repositories: Vec<TokenRepository>,
+    #[serde(default)]
+    permissions: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TokenRepository {
+    name: Option<String>,
+    full_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -221,7 +216,11 @@ struct InstallationResponse {
 
 #[derive(Debug, Serialize)]
 struct JsonTokenOutput<'a> {
-    token: &'a str,
+    installation_id: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    repository_selection: Option<&'a str>,
+    repositories: Vec<String>,
+    permissions: &'a BTreeMap<String, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     expires_at: Option<&'a str>,
 }
@@ -248,11 +247,7 @@ pub fn app_auth(args: AppAuthArgs) -> Result<()> {
     let client = github_client(&jwt)?;
     let installation_id = resolve_installation_id(&args, &client)?;
     let response = create_installation_token(&args, &client, installation_id)?;
-    if args.shell {
-        println!("{}", shell_exports(&response.token, args.export_gh_token));
-    } else {
-        print_token(&args, &response)?;
-    }
+    print_token(&args, installation_id, &response)?;
 
     Ok(())
 }
@@ -316,8 +311,9 @@ fn resolve_installation_id(args: &AppAuthArgs, client: &Client) -> Result<u64> {
     }
 
     let repo = args
-        .repo
-        .as_deref()
+        .repos
+        .first()
+        .map(String::as_str)
         .ok_or_else(|| anyhow!("missing repository; set --repo OWNER/REPO"))?;
     discover_installation_id(args, client, repo)
 }
@@ -338,7 +334,12 @@ fn discover_installation_id(args: &AppAuthArgs, client: &Client, repo: &str) -> 
         owner,
         name
     );
-    let text = send_github_request(client.get(url), "GitHub repository installation API")?;
+    let text = send_github_request(client.get(url), "GitHub repository installation API")
+        .with_context(|| {
+            format!(
+                "failed to discover GitHub App installation for {repo}; public repository access is not enough. The GitHub App must be installed on the repository or owner before an installation token can be minted"
+            )
+        })?;
     let response: InstallationResponse =
         serde_json::from_str(&text).context("failed to parse GitHub installation response")?;
     Ok(response.id)
@@ -419,30 +420,23 @@ fn default_headers(jwt: &str) -> Result<HeaderMap> {
     Ok(headers)
 }
 
-fn shell_quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\\''"))
-}
-
-fn shell_exports(token: &str, export_gh_token: bool) -> String {
-    let quoted = shell_quote(token);
-    if export_gh_token {
-        format!("export GITHUB_TOKEN={quoted}\nexport GH_TOKEN={quoted}")
-    } else {
-        format!("export GITHUB_TOKEN={quoted}")
-    }
-}
-
-fn print_token(args: &AppAuthArgs, response: &TokenResponse) -> Result<()> {
+fn print_token(args: &AppAuthArgs, installation_id: u64, response: &TokenResponse) -> Result<()> {
     match args.format {
         OutputFormat::Text => println!("{}", response.token),
-        OutputFormat::Json => println!(
-            "{}",
-            serde_json::to_string(&JsonTokenOutput {
-                token: &response.token,
-                expires_at: response.expires_at.as_deref(),
-            })
-            .context("failed to serialize token JSON")?
-        ),
+        OutputFormat::Json => {
+            let repositories = json_repository_names(response, args);
+            println!(
+                "{}",
+                serde_json::to_string(&JsonTokenOutput {
+                    installation_id,
+                    repository_selection: response.repository_selection.as_deref(),
+                    repositories,
+                    permissions: &response.permissions,
+                    expires_at: response.expires_at.as_deref(),
+                })
+                .context("failed to serialize token JSON")?
+            );
+        }
     }
     Ok(())
 }
@@ -460,11 +454,27 @@ fn print_jwt(args: &AppAuthArgs, jwt: &str) -> Result<()> {
 }
 
 fn token_repository_names(args: &AppAuthArgs) -> Vec<String> {
-    let mut repositories = args.repositories.clone();
-    if let Some(repo) = &args.repo {
-        repositories.push(repo.clone());
+    repository_names(&args.repos)
+}
+
+fn json_repository_names(response: &TokenResponse, args: &AppAuthArgs) -> Vec<String> {
+    let repositories: Vec<String> = response
+        .repositories
+        .iter()
+        .filter_map(|repository| {
+            repository
+                .full_name
+                .as_deref()
+                .or(repository.name.as_deref())
+                .map(str::to_string)
+        })
+        .collect();
+
+    if repositories.is_empty() {
+        token_repository_names(args)
+    } else {
+        repositories
     }
-    repository_names(&repositories)
 }
 
 fn repository_names(repositories: &[String]) -> Vec<String> {
@@ -505,20 +515,12 @@ impl std::str::FromStr for PermissionArg {
 
 #[cfg(test)]
 mod tests {
-    use super::{permissions_map, repository_names, shell_exports, shell_quote, PermissionArg};
-
-    #[test]
-    fn quotes_token_for_posix_shell() {
-        assert_eq!(shell_quote("abc'def"), "'abc'\\''def'");
-    }
-
-    #[test]
-    fn exports_gh_token_when_requested() {
-        assert_eq!(
-            shell_exports("abc'def", true),
-            "export GITHUB_TOKEN='abc'\\''def'\nexport GH_TOKEN='abc'\\''def'"
-        );
-    }
+    use super::{
+        json_repository_names, permissions_map, repository_names, AppAuthArgs, OutputFormat,
+        PermissionArg, TokenRepository, TokenResponse,
+    };
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
 
     #[test]
     fn extracts_repository_names_for_installation_token_request() {
@@ -547,5 +549,81 @@ mod tests {
             mapped.get("pull_requests").map(String::as_str),
             Some("write")
         );
+    }
+
+    #[test]
+    fn json_repository_names_prefer_github_response_metadata() {
+        let response = TokenResponse {
+            token: "token".to_string(),
+            expires_at: Some("2026-06-14T01:23:45Z".to_string()),
+            repository_selection: Some("selected".to_string()),
+            repositories: vec![
+                TokenRepository {
+                    name: Some("toolbox".to_string()),
+                    full_name: Some("joonjeong/toolbox".to_string()),
+                },
+                TokenRepository {
+                    name: Some("other".to_string()),
+                    full_name: None,
+                },
+            ],
+            permissions: BTreeMap::new(),
+        };
+        let args = test_args();
+
+        assert_eq!(
+            json_repository_names(&response, &args),
+            vec!["joonjeong/toolbox", "other"]
+        );
+    }
+
+    #[test]
+    fn json_repository_names_fall_back_to_requested_scope() {
+        let response = TokenResponse {
+            token: "token".to_string(),
+            expires_at: None,
+            repository_selection: None,
+            repositories: Vec::new(),
+            permissions: BTreeMap::new(),
+        };
+        let args = test_args();
+
+        assert_eq!(json_repository_names(&response, &args), vec!["toolbox"]);
+    }
+
+    #[test]
+    fn json_token_output_never_includes_token() {
+        let mut permissions = BTreeMap::new();
+        permissions.insert("contents".to_string(), "read".to_string());
+        let output = super::JsonTokenOutput {
+            installation_id: 123,
+            repository_selection: Some("selected"),
+            repositories: vec!["joonjeong/toolbox".to_string()],
+            permissions: &permissions,
+            expires_at: Some("2026-06-14T01:23:45Z"),
+        };
+
+        let value = serde_json::to_value(&output).expect("serializes");
+        assert_eq!(value["installation_id"], 123);
+        assert_eq!(value["repository_selection"], "selected");
+        assert_eq!(value["repositories"][0], "joonjeong/toolbox");
+        assert_eq!(value["permissions"]["contents"], "read");
+        assert_eq!(value["expires_at"], "2026-06-14T01:23:45Z");
+        assert!(value.get("token").is_none());
+    }
+
+    fn test_args() -> AppAuthArgs {
+        AppAuthArgs {
+            app_id: 1,
+            installation_id: Some(2),
+            private_key_file: Some(PathBuf::from("private-key.pem")),
+            private_key_path: None,
+            private_key: None,
+            api_url: "https://api.github.com".to_string(),
+            repos: vec!["joonjeong/toolbox".to_string()],
+            permissions: Vec::new(),
+            format: OutputFormat::Json,
+            jwt_only: false,
+        }
     }
 }

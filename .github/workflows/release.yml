@@ -34,6 +34,7 @@ jobs:
       release_name: ${{ steps.metadata.outputs.release_name }}
       release_notes: ${{ steps.metadata.outputs.release_notes }}
       release_tag: ${{ steps.metadata.outputs.release_tag }}
+      release_version: ${{ steps.metadata.outputs.version }}
       target_sha: ${{ steps.metadata.outputs.target_sha }}
     steps:
       - name: Checkout target
@@ -113,6 +114,7 @@ jobs:
       - name: Build
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.linker }}
+          TOOLBOX_VERSION: ${{ needs.prepare.outputs.release_version }}
         run: cargo build --release --target ${{ matrix.target }} --bin toolbox
 
       - name: Package

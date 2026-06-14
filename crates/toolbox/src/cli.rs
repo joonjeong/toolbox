@@ -6,9 +6,14 @@ use clap::{Args, Parser, Subcommand};
 
 use crate::github;
 
+const VERSION: &str = match option_env!("TOOLBOX_VERSION") {
+    Some(version) => version,
+    None => env!("CARGO_PKG_VERSION"),
+};
+
 #[derive(Debug, Parser)]
 #[command(name = "toolbox")]
-#[command(version)]
+#[command(version = VERSION)]
 #[command(about = "Personal general-purpose CLI/TUI toolbox")]
 #[command(after_long_help = "Invocation forms:
   toolbox github app-auth ...
@@ -24,7 +29,7 @@ pub struct Cli {
 
 #[derive(Debug, Parser)]
 #[command(name = "github-app-auth")]
-#[command(version)]
+#[command(version = VERSION)]
 struct GithubAppAuthCli {
     #[command(flatten)]
     args: github::AppAuthArgs,
@@ -32,7 +37,7 @@ struct GithubAppAuthCli {
 
 #[derive(Debug, Parser)]
 #[command(name = "github-agent-skill")]
-#[command(version)]
+#[command(version = VERSION)]
 struct GithubAgentSkillCli {
     #[command(flatten)]
     args: github::AppAgentWorkflowSkillArgs,

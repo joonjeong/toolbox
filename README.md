@@ -33,13 +33,13 @@ toolbox github app-auth \
   --private-key-file /path/to/private-key.pem
 ```
 
-The command prints the installation token to stdout. For shell setup:
+The command prints the installation token to stdout. For `gh`, assign that
+token with shell-native command substitution:
 
 ```sh
-eval "$(toolbox github app-auth --shell \
+export GH_TOKEN="$(toolbox github app-auth \
   --app-id "$GITHUB_APP_ID" \
   --repo OWNER/REPO \
-  --export-gh-token \
   --private-key-file /path/to/private-key.pem)"
 ```
 
@@ -54,17 +54,19 @@ Supported environment variables:
 
 Useful options:
 
-- `--repo OWNER/REPO` discovers the app installation from the repository and
-  scopes the token to that repository.
+- `--repo OWNER/REPO` scopes the token to a repository. Repeat `--repo` for
+  multiple repositories. When `--installation-id` is omitted, the first `--repo`
+  value is also used to discover the app installation.
 - `--installation-id ID` skips repository installation discovery when the
   installation ID is already known.
-- `--repository OWNER/REPO` limits the token to one or more additional
-  repositories.
 - `--permission key=value` limits token permissions, for example
   `--permission contents=read`.
-- `--format json` prints structured output.
-- `--shell --export-gh-token` exports both `GITHUB_TOKEN` and `GH_TOKEN`.
+- `--format json` prints diagnostic metadata without the installation token.
 - `--jwt-only` prints the signed GitHub App JWT without exchanging it.
+
+Public release downloads can be tested without authentication. GitHub App auth
+must be tested against a repository where the App is installed, even if the
+repository itself is public.
 
 ## Agent skill
 

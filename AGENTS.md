@@ -32,8 +32,8 @@ refactoring.
 
 Important details:
 
-- `--repository OWNER/REPO` is user-facing, but GitHub's installation token API
-  expects only repository names in the `repositories` field.
+- `--repo OWNER/REPO` is user-facing and repeatable, but GitHub's installation
+  token API expects only repository names in the `repositories` field.
 - The blocking HTTP client should have a finite timeout so automation does not
   hang indefinitely.
 - GitHub App JWTs must stay below GitHub's 10-minute maximum lifetime. Account
