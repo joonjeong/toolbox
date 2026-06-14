@@ -1,9 +1,9 @@
 ---
-name: github-app-auth
-description: Use toolbox github app-auth with gh while reusing short-lived GitHub App installation token sessions safely. Use when an agent or automation needs repository access through app credentials for issues, pull requests, releases, or repository API calls, and must avoid personal access tokens, unnecessary token minting, persistent gh login, shell history leaks, or accidental token logging.
+name: github-app-agent-workflow
+description: Perform GitHub agent work through toolbox GitHub App authentication, using short-lived installation token sessions with gh safely. Use when an agent or automation needs to work on issues, pull requests, releases, or repository API calls through GitHub App credentials while avoiding personal access tokens, unnecessary token minting, persistent gh login, shell history leaks, or accidental token logging.
 ---
 
-# GitHub App Auth
+# GitHub App Agent Workflow
 
 Use the `toolbox` binary to sign a GitHub App JWT and exchange it for an
 installation access token, then pass that token to `gh` through a bounded
@@ -30,6 +30,12 @@ github-app-auth [OPTIONS] # when this name is symlinked to the toolbox binary
 ```
 
 When scripting for portability, prefer `toolbox github app-auth`.
+
+To create this skill in another agent's skills directory, run:
+
+```sh
+toolbox github app-agent-workflow-skill --directory /path/to/skills
+```
 
 ## Required Inputs
 

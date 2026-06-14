@@ -1,5 +1,7 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
+use std::fs;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
 fn shows_top_level_help() {
@@ -8,6 +10,7 @@ fn shows_top_level_help() {
     cmd.arg("--help").assert().success().stdout(
         predicate::str::contains("github")
             .and(predicate::str::contains("github-app-auth"))
+            .and(predicate::str::contains("app-agent-workflow-skill"))
             .and(predicate::str::contains("toolbox github app-auth"))
             .and(predicate::str::contains("github-app-auth ...")),
     );
@@ -46,4 +49,65 @@ fn github_app_auth_requires_private_key() {
     .assert()
     .failure()
     .stderr(predicate::str::contains("missing private key"));
+}
+
+#[test]
+fn creates_github_app_agent_workflow_skill() {
+    let skills_dir = unique_temp_dir("toolbox-skill-test");
+    let mut cmd = Command::cargo_bin("toolbox").expect("binary exists");
+
+    cmd.args([
+        "github",
+        "app-agent-workflow-skill",
+        "--directory",
+        skills_dir.to_str().expect("utf-8 path"),
+    ])
+    .assert()
+    .success()
+    .stdout(predicate::str::contains("github-app-agent-workflow"));
+
+    let skill_file = skills_dir
+        .join("github-app-agent-workflow")
+        .join("SKILL.md");
+    let skill = fs::read_to_string(&skill_file).expect("skill file exists");
+    assert!(skill.contains("name: github-app-agent-workflow"));
+    assert!(skill.contains("toolbox github app-auth"));
+
+    fs::remove_dir_all(skills_dir).expect("temporary skill directory removed");
+}
+
+#[test]
+fn refuses_to_overwrite_existing_skill_without_force() {
+    let skills_dir = unique_temp_dir("toolbox-skill-test");
+
+    let mut create = Command::cargo_bin("toolbox").expect("binary exists");
+    create
+        .args([
+            "github-app-agent-workflow-skill",
+            "--directory",
+            skills_dir.to_str().expect("utf-8 path"),
+        ])
+        .assert()
+        .success();
+
+    let mut overwrite = Command::cargo_bin("toolbox").expect("binary exists");
+    overwrite
+        .args([
+            "github-app-agent-workflow-skill",
+            "--directory",
+            skills_dir.to_str().expect("utf-8 path"),
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("already exists"));
+
+    fs::remove_dir_all(skills_dir).expect("temporary skill directory removed");
+}
+
+fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time after epoch")
+        .as_nanos();
+    std::env::temp_dir().join(format!("{prefix}-{}-{unique}", std::process::id()))
 }

@@ -57,9 +57,18 @@ Useful options:
 
 ## Skills
 
-Agent-facing skills live under `skills/`. The `github-app-auth` skill describes
-how an agent can use `toolbox github app-auth` with `gh` without exposing or
-persisting temporary GitHub App installation tokens.
+Agent-facing skills live under `skills/`. The `github-app-agent-workflow` skill
+describes how an agent can use `toolbox github app-auth` with `gh` without
+exposing or persisting temporary GitHub App installation tokens.
+
+Create the bundled skill in another agent's skills directory:
+
+```sh
+toolbox github app-agent-workflow-skill --directory ~/.codex/skills
+```
+
+The command writes `github-app-agent-workflow/SKILL.md` under the target
+directory. Use `--force` to overwrite an existing copy.
 
 ## Releases
 

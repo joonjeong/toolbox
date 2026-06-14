@@ -10,6 +10,10 @@ use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT}
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
+const APP_AGENT_WORKFLOW_SKILL_NAME: &str = "github-app-agent-workflow";
+const APP_AGENT_WORKFLOW_SKILL: &str =
+    include_str!("../../../skills/github-app-agent-workflow/SKILL.md");
+
 #[derive(Debug, Args)]
 #[command(
     about = "Authenticate as a GitHub App installation",
@@ -108,6 +112,31 @@ pub struct AppAuthArgs {
     jwt_only: bool,
 }
 
+#[derive(Debug, Args)]
+#[command(
+    about = "Create the GitHub App agent workflow skill in a directory",
+    long_about = "Create the bundled github-app-agent-workflow skill under a target skills directory.
+
+The command writes DIR/github-app-agent-workflow/SKILL.md. Use it to install the agent-facing workflow guidance next to Codex, Hermes, or another agent's skill directory without copying files manually.",
+    after_long_help = "Examples:
+  toolbox github app-agent-workflow-skill --directory ~/.codex/skills
+  toolbox github-app-agent-workflow-skill --directory ./skills --force
+
+Output:
+  Prints the created skill directory path."
+)]
+pub struct AppAgentWorkflowSkillArgs {
+    /// Directory where the skill folder should be created.
+    ///
+    /// The command creates <DIRECTORY>/github-app-agent-workflow/SKILL.md.
+    #[arg(long, short = 'd', value_name = "DIRECTORY")]
+    directory: PathBuf,
+
+    /// Overwrite an existing SKILL.md.
+    #[arg(long)]
+    force: bool,
+}
+
 #[derive(Debug, Serialize)]
 struct Claims {
     iat: i64,
@@ -141,6 +170,26 @@ pub fn app_auth(args: AppAuthArgs) -> Result<()> {
         println!("{token}");
     }
 
+    Ok(())
+}
+
+pub fn create_app_agent_workflow_skill(args: AppAgentWorkflowSkillArgs) -> Result<()> {
+    let skill_dir = args.directory.join(APP_AGENT_WORKFLOW_SKILL_NAME);
+    let skill_file = skill_dir.join("SKILL.md");
+
+    if skill_file.exists() && !args.force {
+        return Err(anyhow!(
+            "{} already exists; pass --force to overwrite it",
+            skill_file.display()
+        ));
+    }
+
+    fs::create_dir_all(&skill_dir)
+        .with_context(|| format!("failed to create {}", skill_dir.display()))?;
+    fs::write(&skill_file, APP_AGENT_WORKFLOW_SKILL)
+        .with_context(|| format!("failed to write {}", skill_file.display()))?;
+
+    println!("{}", skill_dir.display());
     Ok(())
 }
 

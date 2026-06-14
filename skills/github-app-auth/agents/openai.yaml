@@ -1,4 +1,0 @@
-interface:
-  display_name: "GitHub App Auth"
-  short_description: "Reuse GitHub App token sessions safely"
-  default_prompt: "Use $github-app-auth to run related gh commands in a bounded short-lived GitHub App token session without exposing or persisting the token."
