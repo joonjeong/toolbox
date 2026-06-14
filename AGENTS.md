@@ -64,8 +64,9 @@ Release distribution is handled by GitHub Actions:
   inputs to `release.yml` instead of duplicating metadata generation or the
   release build matrix.
 
-When changing release workflows, keep Linux amd64, Linux arm64, and macOS arm64
-assets working unless the user explicitly changes the support matrix.
+When changing release workflows, keep `x86_64-unknown-linux-gnu`,
+`aarch64-unknown-linux-gnu`, and `aarch64-apple-darwin` assets working unless
+the user explicitly changes the support matrix.
 
 ## Development Commands
 
