@@ -61,8 +61,8 @@ Pushing a `v*` tag runs the release workflow and uploads `toolbox` binaries for
 Linux x86_64, macOS x86_64, and macOS aarch64 to the matching GitHub release.
 
 The weekly release workflow runs every Sunday at 10:00 KST and creates a
-headver release from the default branch. Until the project is ready for a stable
-major version, automated releases use major version `0` in the form
-`v0.<head-commit-count>.0`. The weekly workflow only calculates the headver tag
-and delegates release creation, builds, and asset uploads to the release
-workflow.
+[HeadVer](https://github.com/line/headver) release from the default branch. Until
+the project is ready for a stable head value, automated releases use head `0` in
+the form `v0.<yearweek>.<build>`. The weekly workflow only calculates the
+HeadVer tag and delegates release creation, builds, and asset uploads to the
+release workflow.

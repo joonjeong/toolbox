@@ -18,30 +18,27 @@ jobs:
       release_name: ${{ steps.headver.outputs.release_name }}
       release_notes: ${{ steps.headver.outputs.release_notes }}
       release_tag: ${{ steps.headver.outputs.release_tag }}
-      should_release: ${{ steps.headver.outputs.should_release }}
       target_sha: ${{ steps.headver.outputs.target_sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Calculate headver
         id: headver
         env:
-          GH_TOKEN: ${{ github.token }}
-          HEADVER_MAJOR: "0"
+          HEADVER_BUILD: ${{ github.run_number }}
+          HEADVER_HEAD: "0"
         shell: bash
         run: |
           set -euo pipefail
 
           target_sha="$(git rev-parse HEAD)"
-          commit_count="$(git rev-list --count HEAD)"
-          release_version="${HEADVER_MAJOR}.${commit_count}.0"
+          yearweek="$(TZ=Asia/Seoul date +%g%V)"
+          release_version="${HEADVER_HEAD}.${yearweek}.${HEADVER_BUILD}"
           release_tag="v${release_version}"
           asset_suffix="${release_tag#v}"
           release_name="toolbox ${release_tag}"
-          release_notes="Automated weekly headver release ${release_version} for ${target_sha}."
+          release_notes="Automated weekly HeadVer release ${release_version} for ${target_sha}."
 
           {
             echo "target_sha=${target_sha}"
@@ -56,18 +53,9 @@ jobs:
             }
           } >> "${GITHUB_OUTPUT}"
 
-          if gh release view "${release_tag}" >/dev/null 2>&1; then
-            echo "should_release=false" >> "${GITHUB_OUTPUT}"
-            echo "Release ${release_tag} already exists; skipping."
-            exit 0
-          fi
-
-          echo "should_release=true" >> "${GITHUB_OUTPUT}"
-
   release:
     name: Release
     needs: prepare
-    if: needs.prepare.outputs.should_release == 'true'
     uses: ./.github/workflows/release.yml
     with:
       asset_suffix: ${{ needs.prepare.outputs.asset_suffix }}
