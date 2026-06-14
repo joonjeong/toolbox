@@ -243,7 +243,7 @@ pub fn app_auth(args: AppAuthArgs) -> Result<()> {
     }
 
     let client = github_client(&jwt)?;
-    let installation_id = resolve_installation_id(&args, &jwt, &client)?;
+    let installation_id = resolve_installation_id(&args, &client)?;
     let response = create_installation_token(&args, &client, installation_id)?;
     if args.shell {
         println!("{}", shell_exports(&response.token, args.export_gh_token));
