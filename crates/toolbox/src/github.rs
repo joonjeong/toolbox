@@ -74,14 +74,22 @@ pub struct AppAuthArgs {
     ///
     /// Use this or --private-key, not both. Can also be set with
     /// GITHUB_APP_PRIVATE_KEY_FILE.
-    #[arg(long, env = "GITHUB_APP_PRIVATE_KEY_FILE", conflicts_with = "private_key")]
+    #[arg(
+        long,
+        env = "GITHUB_APP_PRIVATE_KEY_FILE",
+        conflicts_with = "private_key"
+    )]
     private_key_file: Option<PathBuf>,
 
     /// GitHub App private key PEM content.
     ///
     /// Use this or --private-key-file, not both. Can also be set with
     /// GITHUB_APP_PRIVATE_KEY. Prefer --private-key-file in shell history.
-    #[arg(long, env = "GITHUB_APP_PRIVATE_KEY", conflicts_with = "private_key_file")]
+    #[arg(
+        long,
+        env = "GITHUB_APP_PRIVATE_KEY",
+        conflicts_with = "private_key_file"
+    )]
     private_key: Option<String>,
 
     /// GitHub API base URL.
