@@ -29,7 +29,7 @@ issues or pull requests as a GitHub App installation.
 ```sh
 toolbox github app-auth \
   --app-id "$GITHUB_APP_ID" \
-  --installation-id "$GITHUB_APP_INSTALLATION_ID" \
+  --repo OWNER/REPO \
   --private-key-file /path/to/private-key.pem
 ```
 
@@ -38,21 +38,32 @@ The command prints the installation token to stdout. For shell setup:
 ```sh
 eval "$(toolbox github app-auth --shell \
   --app-id "$GITHUB_APP_ID" \
-  --installation-id "$GITHUB_APP_INSTALLATION_ID" \
+  --repo OWNER/REPO \
+  --export-gh-token \
   --private-key-file /path/to/private-key.pem)"
 ```
 
 Supported environment variables:
 
 - `GITHUB_APP_ID`
-- `GITHUB_APP_INSTALLATION_ID`
+- `GITHUB_APP_INSTALLATION_ID` when not using `--repo` discovery
 - `GITHUB_APP_PRIVATE_KEY_FILE`
+- `GITHUB_APP_PRIVATE_KEY_PATH`
 - `GITHUB_APP_PRIVATE_KEY`
 - `GITHUB_API_URL`
 
 Useful options:
 
-- `--repository OWNER/REPO` limits the token to one or more repositories.
+- `--repo OWNER/REPO` discovers the installation ID from the repository and
+  scopes the token to that repository.
+- `--installation-id ID` skips discovery when the installation ID is already
+  known.
+- `--repository OWNER/REPO` limits the token to one or more additional
+  repositories.
+- `--permission key=value` limits token permissions, for example
+  `--permission contents=read`.
+- `--format json` prints structured output.
+- `--shell --export-gh-token` exports both `GITHUB_TOKEN` and `GH_TOKEN`.
 - `--jwt-only` prints the signed GitHub App JWT without exchanging it.
 
 ## Agent skill

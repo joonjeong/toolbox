@@ -8,6 +8,7 @@ use crate::github;
 
 #[derive(Debug, Parser)]
 #[command(name = "toolbox")]
+#[command(version)]
 #[command(about = "Personal general-purpose CLI/TUI toolbox")]
 #[command(after_long_help = "Invocation forms:
   toolbox github app-auth ...
@@ -19,6 +20,22 @@ Run `toolbox github app-auth --help` for GitHub App authentication options and e
 pub struct Cli {
     #[command(subcommand)]
     command: Command,
+}
+
+#[derive(Debug, Parser)]
+#[command(name = "github-app-auth")]
+#[command(version)]
+struct GithubAppAuthCli {
+    #[command(flatten)]
+    args: github::AppAuthArgs,
+}
+
+#[derive(Debug, Parser)]
+#[command(name = "github-agent-skill")]
+#[command(version)]
+struct GithubAgentSkillCli {
+    #[command(flatten)]
+    args: github::AppAgentWorkflowSkillArgs,
 }
 
 #[derive(Debug, Subcommand)]
@@ -67,13 +84,15 @@ where
         invoked_as.as_str(),
         "github-app-auth" | "toolbox-github-app-auth"
     ) {
-        args.insert(1, OsString::from("github-app-auth"));
+        let cli = GithubAppAuthCli::parse_from(args);
+        return github::app_auth(cli.args);
     }
     if matches!(
         invoked_as.as_str(),
         "github-agent-skill" | "toolbox-github-agent-skill"
     ) {
-        args.insert(1, OsString::from("github-agent-skill"));
+        let cli = GithubAgentSkillCli::parse_from(args);
+        return github::create_app_agent_workflow_skill(cli.args);
     }
 
     let cli = Cli::parse_from(args);
