@@ -12,7 +12,7 @@ use time::OffsetDateTime;
 
 const APP_AGENT_WORKFLOW_SKILL_NAME: &str = "github-app-agent-workflow";
 const APP_AGENT_WORKFLOW_SKILL: &str =
-    include_str!("../../../skills/github-app-agent-workflow/SKILL.md");
+    include_str!("../resources/github-app-agent-workflow/SKILL.md");
 
 #[derive(Debug, Args)]
 #[command(
@@ -122,13 +122,13 @@ pub struct AppAuthArgs {
 
 #[derive(Debug, Args)]
 #[command(
-    about = "Create the GitHub App agent workflow skill in a directory",
+    about = "Create the GitHub App agent workflow skill",
     long_about = "Create the bundled github-app-agent-workflow skill under a target skills directory.
 
-The command writes DIR/github-app-agent-workflow/SKILL.md. Use it to install the agent-facing workflow guidance next to Codex, Hermes, or another agent's skill directory without copying files manually.",
+The command writes OUTPUT_PATH/github-app-agent-workflow/SKILL.md. Use it to install the agent-facing workflow guidance next to Codex, Hermes, or another agent's skill directory without copying files manually.",
     after_long_help = "Examples:
-  toolbox github app-agent-workflow-skill --directory ~/.codex/skills
-  toolbox github-app-agent-workflow-skill --directory ./skills --force
+  toolbox github agent-skill --output-path ~/.codex/skills
+  toolbox github-agent-skill -o ./skills --force
 
 Output:
   Prints the created skill directory path."
@@ -136,9 +136,9 @@ Output:
 pub struct AppAgentWorkflowSkillArgs {
     /// Directory where the skill folder should be created.
     ///
-    /// The command creates <DIRECTORY>/github-app-agent-workflow/SKILL.md.
-    #[arg(long, short = 'd', value_name = "DIRECTORY")]
-    directory: PathBuf,
+    /// The command creates <OUTPUT_PATH>/github-app-agent-workflow/SKILL.md.
+    #[arg(long, short = 'o', value_name = "OUTPUT_PATH")]
+    output_path: PathBuf,
 
     /// Overwrite an existing SKILL.md.
     #[arg(long)]
@@ -182,7 +182,7 @@ pub fn app_auth(args: AppAuthArgs) -> Result<()> {
 }
 
 pub fn create_app_agent_workflow_skill(args: AppAgentWorkflowSkillArgs) -> Result<()> {
-    let skill_dir = args.directory.join(APP_AGENT_WORKFLOW_SKILL_NAME);
+    let skill_dir = args.output_path.join(APP_AGENT_WORKFLOW_SKILL_NAME);
     let skill_file = skill_dir.join("SKILL.md");
 
     if skill_file.exists() && !args.force {

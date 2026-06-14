@@ -55,20 +55,20 @@ Useful options:
 - `--repository OWNER/REPO` limits the token to one or more repositories.
 - `--jwt-only` prints the signed GitHub App JWT without exchanging it.
 
-## Skills
+## Agent skill
 
-Agent-facing skills live under `skills/`. The `github-app-agent-workflow` skill
-describes how an agent can use `toolbox github app-auth` with `gh` without
-exposing or persisting temporary GitHub App installation tokens.
+The `toolbox` binary bundles a `github-app-agent-workflow` skill. It describes
+how an agent can use `toolbox github app-auth` with `gh` without exposing or
+persisting temporary GitHub App installation tokens.
 
 Create the bundled skill in another agent's skills directory:
 
 ```sh
-toolbox github app-agent-workflow-skill --directory ~/.codex/skills
+toolbox github agent-skill --output-path ~/.codex/skills
 ```
 
-The command writes `github-app-agent-workflow/SKILL.md` under the target
-directory. Use `--force` to overwrite an existing copy.
+The command writes `github-app-agent-workflow/SKILL.md` under the output path.
+Use `--force` to overwrite an existing copy.
 
 ## Releases
 

@@ -34,7 +34,7 @@ When scripting for portability, prefer `toolbox github app-auth`.
 To create this skill in another agent's skills directory, run:
 
 ```sh
-toolbox github app-agent-workflow-skill --directory /path/to/skills
+toolbox github agent-skill --output-path /path/to/skills
 ```
 
 ## Required Inputs

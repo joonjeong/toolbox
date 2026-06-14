@@ -13,7 +13,7 @@ fn shows_top_level_help() {
     cmd.arg("--help").assert().success().stdout(
         predicate::str::contains("github")
             .and(predicate::str::contains("github-app-auth"))
-            .and(predicate::str::contains("app-agent-workflow-skill"))
+            .and(predicate::str::contains("agent-skill"))
             .and(predicate::str::contains("toolbox github app-auth"))
             .and(predicate::str::contains("github-app-auth ...")),
     );
@@ -61,8 +61,8 @@ fn creates_github_app_agent_workflow_skill() {
 
     cmd.args([
         "github",
-        "app-agent-workflow-skill",
-        "--directory",
+        "agent-skill",
+        "--output-path",
         skills_dir.to_str().expect("utf-8 path"),
     ])
     .assert()
@@ -86,8 +86,8 @@ fn refuses_to_overwrite_existing_skill_without_force() {
     let mut create = Command::cargo_bin("toolbox").expect("binary exists");
     create
         .args([
-            "github-app-agent-workflow-skill",
-            "--directory",
+            "github-agent-skill",
+            "-o",
             skills_dir.to_str().expect("utf-8 path"),
         ])
         .assert()
@@ -101,8 +101,8 @@ fn refuses_to_overwrite_existing_skill_without_force() {
     let mut overwrite = Command::cargo_bin("toolbox").expect("binary exists");
     overwrite
         .args([
-            "github-app-agent-workflow-skill",
-            "--directory",
+            "github-agent-skill",
+            "-o",
             skills_dir.to_str().expect("utf-8 path"),
         ])
         .assert()
