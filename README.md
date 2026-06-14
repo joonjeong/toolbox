@@ -57,10 +57,25 @@ Useful options:
 
 ## Releases
 
-Pushing a `v*` tag runs the release workflow and uploads `toolbox` binaries for
-Linux x86_64, macOS x86_64, and macOS aarch64 to the matching GitHub release.
+The release workflow creates HeadVer-tagged GitHub releases and uploads
+`toolbox` binaries for Linux x86_64, macOS x86_64, and macOS aarch64.
 
 The weekly release workflow runs every Sunday at 10:00 KST and creates a
-headver-style release from the default branch. Until the project is ready for a
-stable major version, automated releases use major version `0` in the form
-`v0.<commit-count>.0`.
+[HeadVer](https://github.com/line/headver) release from the default branch. Until
+the project is ready for a stable head value, automated releases use head `0` in
+the form `v0.<yearweek>.<build>`. The weekly workflow only calculates the
+HeadVer tag and delegates release creation, builds, and asset uploads to the
+release workflow.
+
+HeadVer values are calculated by `scripts/headver`:
+
+```sh
+scripts/headver --head 0 --build 123 --timezone Asia/Seoul
+```
+
+The script emits `key=value` lines, including `version`, `tag`, and
+`asset_suffix`, so CI can append it directly to `$GITHUB_OUTPUT`.
+
+Release metadata is calculated by `scripts/release-metadata`, which wraps
+`scripts/headver` and emits the release tag, title, notes, target commit, and
+asset suffix used by `.github/workflows/release.yml`.

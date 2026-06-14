@@ -45,11 +45,24 @@ Important details:
 
 Release distribution is handled by GitHub Actions:
 
-- Tag pushes matching `v*` build release binaries and upload assets.
+- Release workflow runs must use LINE HeadVer tags only. Do not add alternate
+  tag/version calculation paths for releases.
 - The weekly release workflow runs every Sunday at 10:00 KST using cron
   `0 1 * * 0`.
-- Weekly automated releases use a headver-style version while the major version
-  remains `0`: `v0.<commit-count>.0`.
+- Weekly automated releases use LINE HeadVer: `{head}.{yearweek}.{build}`.
+  Keep the head value at `0` until the user explicitly changes it. Calculate
+  `{yearweek}` with ISO week-year/week in KST, and use the GitHub Actions run
+  number as `{build}`. Do not reinterpret HeadVer as semantic compatibility
+  versioning or commit-count versioning.
+- Use `scripts/headver` for HeadVer calculation instead of duplicating date
+  logic in workflow YAML.
+- Use `scripts/release-metadata` to prepare release tags, titles, notes, target
+  commits, and asset suffixes instead of building those values inline in
+  workflow YAML.
+- Keep release build/upload logic in `.github/workflows/release.yml`. If
+  `.github/workflows/weekly-release.yml` exists, it should pass the HeadVer
+  inputs to `release.yml` instead of duplicating metadata generation or the
+  release build matrix.
 
 When changing release workflows, keep Linux x86_64, macOS x86_64, and macOS
 aarch64 assets working unless the user explicitly changes the support matrix.

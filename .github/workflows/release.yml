@@ -1,15 +1,78 @@
 name: Release
 
 on:
-  push:
-    tags: ["v*"]
+  workflow_call:
+    inputs:
+      target_ref:
+        description: "Git ref or SHA to build and attach to the release."
+        required: true
+        type: string
+      head:
+        description: "LINE HeadVer head value."
+        required: false
+        default: "0"
+        type: string
+      build:
+        description: "LINE HeadVer build value."
+        required: true
+        type: string
+      timezone:
+        description: "Timezone used for LINE HeadVer yearweek."
+        required: false
+        default: "Asia/Seoul"
+        type: string
 
 permissions:
   contents: write
 
 jobs:
+  prepare:
+    name: Prepare release
+    runs-on: ubuntu-latest
+    outputs:
+      asset_suffix: ${{ steps.metadata.outputs.asset_suffix }}
+      release_name: ${{ steps.metadata.outputs.release_name }}
+      release_notes: ${{ steps.metadata.outputs.release_notes }}
+      release_tag: ${{ steps.metadata.outputs.release_tag }}
+      target_sha: ${{ steps.metadata.outputs.target_sha }}
+    steps:
+      - name: Checkout target
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_ref }}
+
+      - name: Resolve release metadata
+        id: metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/release-metadata \
+            --target-ref "${{ inputs.target_ref }}" \
+            --head "${{ inputs.head }}" \
+            --build "${{ inputs.build }}" \
+            --timezone "${{ inputs.timezone }}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_NAME: ${{ steps.metadata.outputs.release_name }}
+          RELEASE_NOTES: ${{ steps.metadata.outputs.release_notes }}
+          RELEASE_TAG: ${{ steps.metadata.outputs.release_tag }}
+          TARGET_REF: ${{ steps.metadata.outputs.target_sha }}
+        run: |
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "Release ${RELEASE_TAG} already exists; assets will be uploaded."
+            exit 0
+          fi
+
+          gh release create "${RELEASE_TAG}" \
+            --target "${TARGET_REF}" \
+            --title "${RELEASE_NAME}" \
+            --notes "${RELEASE_NOTES}"
+
   build:
     name: Build ${{ matrix.asset }}
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
@@ -27,6 +90,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.target_sha }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -38,13 +103,16 @@ jobs:
 
       - name: Package
         shell: bash
+        env:
+          ASSET_NAME: ${{ matrix.asset }}-${{ needs.prepare.outputs.asset_suffix }}
         run: |
           mkdir -p dist
-          cp "target/${{ matrix.target }}/release/toolbox" "dist/${{ matrix.asset }}"
-          chmod +x "dist/${{ matrix.asset }}"
-          shasum -a 256 "dist/${{ matrix.asset }}" > "dist/${{ matrix.asset }}.sha256"
+          cp "target/${{ matrix.target }}/release/toolbox" "dist/${ASSET_NAME}"
+          chmod +x "dist/${ASSET_NAME}"
+          shasum -a 256 "dist/${ASSET_NAME}" > "dist/${ASSET_NAME}.sha256"
 
       - name: Upload release assets
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${GITHUB_REF_NAME}" dist/* --clobber
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+        run: gh release upload "${RELEASE_TAG}" dist/* --clobber
