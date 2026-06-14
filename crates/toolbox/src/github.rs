@@ -11,36 +11,99 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 #[derive(Debug, Args)]
+#[command(
+    about = "Authenticate as a GitHub App installation",
+    long_about = "Sign a GitHub App JWT, exchange it for an installation access token, and print the token to stdout.
+
+Use this command from coding agents or automation that need temporary GitHub repository access through a GitHub App installation. Provide the app ID, installation ID, and exactly one private key source: --private-key-file or --private-key. Values can also come from the documented environment variables.",
+    after_long_help = "Purpose:
+  Sign a GitHub App JWT, exchange it for an installation access token, and print the token to stdout. Use this from coding agents or automation that need temporary GitHub repository access through a GitHub App installation.
+
+Invocation forms:
+  toolbox github app-auth [OPTIONS]
+  toolbox github-app-auth [OPTIONS]
+  github-app-auth [OPTIONS]    when symlinked to the toolbox binary
+
+Examples:
+  toolbox github app-auth \\
+    --app-id \"$GITHUB_APP_ID\" \\
+    --installation-id \"$GITHUB_APP_INSTALLATION_ID\" \\
+    --private-key-file /path/to/private-key.pem
+
+  eval \"$(toolbox github app-auth --shell \\
+    --repository OWNER/REPO \\
+    --app-id \"$GITHUB_APP_ID\" \\
+    --installation-id \"$GITHUB_APP_INSTALLATION_ID\" \\
+    --private-key-file /path/to/private-key.pem)\"
+
+  toolbox github-app-auth --jwt-only \\
+    --app-id \"$GITHUB_APP_ID\" \\
+    --private-key-file /path/to/private-key.pem
+
+Environment:
+  GITHUB_APP_ID
+  GITHUB_APP_INSTALLATION_ID
+  GITHUB_APP_PRIVATE_KEY_FILE
+  GITHUB_APP_PRIVATE_KEY
+  GITHUB_API_URL
+
+Output:
+  By default, prints only the installation token. With --shell, prints a POSIX shell export statement for GITHUB_TOKEN. With --jwt-only, prints the signed GitHub App JWT and does not call the installation token API.
+
+Repository scoping:
+  Repeat --repository to limit the token to specific repositories. Pass OWNER/REPO for user-facing clarity; only the repository name is sent to GitHub's installation token API."
+)]
 pub struct AppAuthArgs {
     /// GitHub App ID.
+    ///
+    /// Can also be set with GITHUB_APP_ID.
     #[arg(long, env = "GITHUB_APP_ID")]
     app_id: u64,
 
     /// GitHub App installation ID.
+    ///
+    /// Can also be set with GITHUB_APP_INSTALLATION_ID.
     #[arg(long, env = "GITHUB_APP_INSTALLATION_ID")]
     installation_id: u64,
 
     /// Path to the GitHub App private key PEM file.
+    ///
+    /// Use this or --private-key, not both. Can also be set with
+    /// GITHUB_APP_PRIVATE_KEY_FILE.
     #[arg(long, env = "GITHUB_APP_PRIVATE_KEY_FILE")]
     private_key_file: Option<PathBuf>,
 
     /// GitHub App private key PEM content.
+    ///
+    /// Use this or --private-key-file, not both. Can also be set with
+    /// GITHUB_APP_PRIVATE_KEY. Prefer --private-key-file in shell history.
     #[arg(long, env = "GITHUB_APP_PRIVATE_KEY")]
     private_key: Option<String>,
 
     /// GitHub API base URL.
+    ///
+    /// Override for GitHub Enterprise Server. Can also be set with
+    /// GITHUB_API_URL.
     #[arg(long, env = "GITHUB_API_URL", default_value = "https://api.github.com")]
     api_url: String,
 
-    /// Limit the installation token to specific repositories.
+    /// Limit the installation token to a repository.
+    ///
+    /// Repeat for multiple repositories. OWNER/REPO is accepted for user-facing
+    /// clarity, but only REPO is sent to GitHub's installation token API.
     #[arg(long = "repository", value_name = "OWNER/REPO")]
     repositories: Vec<String>,
 
-    /// Emit a shell export statement instead of the raw token.
+    /// Emit `export GITHUB_TOKEN=...` instead of the raw token.
+    ///
+    /// Intended for `eval "$(toolbox github app-auth --shell ...)"`.
     #[arg(long)]
     shell: bool,
 
-    /// Print the JWT instead of exchanging it for an installation token.
+    /// Print the signed GitHub App JWT and skip token exchange.
+    ///
+    /// Useful for debugging app authentication. The JWT is intentionally short
+    /// lived and remains below GitHub's 10-minute maximum.
     #[arg(long)]
     jwt_only: bool,
 }

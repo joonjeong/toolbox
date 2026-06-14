@@ -9,6 +9,12 @@ use crate::github;
 #[derive(Debug, Parser)]
 #[command(name = "toolbox")]
 #[command(about = "Personal general-purpose CLI/TUI toolbox")]
+#[command(after_long_help = "Invocation forms:
+  toolbox github app-auth ...
+  toolbox github-app-auth ...
+  github-app-auth ...        when symlinked to the toolbox binary
+
+Run `toolbox github app-auth --help` for GitHub App authentication options and examples.")]
 pub struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -23,6 +29,7 @@ enum Command {
 }
 
 #[derive(Debug, Args)]
+#[command(about = "GitHub related tools")]
 struct GithubCommand {
     #[command(subcommand)]
     command: GithubSubcommand,
