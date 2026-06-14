@@ -59,3 +59,8 @@ Useful options:
 
 Pushing a `v*` tag runs the release workflow and uploads `toolbox` binaries for
 Linux x86_64, macOS x86_64, and macOS aarch64 to the matching GitHub release.
+
+The weekly release workflow runs every Sunday at 10:00 KST and creates a
+headver-style release from the default branch. Until the project is ready for a
+stable major version, automated releases use major version `0` in the form
+`v0.<commit-count>.0`.
