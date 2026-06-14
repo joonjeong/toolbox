@@ -64,10 +64,10 @@ persisting temporary GitHub App installation tokens.
 Create the bundled skill in another agent's skills directory:
 
 ```sh
-toolbox github agent-skill --output-path ~/.codex/skills
+toolbox github agent-skill --install-path ~/.codex/skills
 ```
 
-The command writes `github-app-agent-workflow/SKILL.md` under the output path.
+The command writes `github-app-agent-workflow/SKILL.md` under the install path.
 Use `--force` to overwrite an existing copy.
 
 ## Releases

@@ -62,7 +62,7 @@ fn creates_github_app_agent_workflow_skill() {
     cmd.args([
         "github",
         "agent-skill",
-        "--output-path",
+        "--install-path",
         skills_dir.to_str().expect("utf-8 path"),
     ])
     .assert()
@@ -87,7 +87,7 @@ fn refuses_to_overwrite_existing_skill_without_force() {
     create
         .args([
             "github-agent-skill",
-            "-o",
+            "-i",
             skills_dir.to_str().expect("utf-8 path"),
         ])
         .assert()
@@ -102,7 +102,7 @@ fn refuses_to_overwrite_existing_skill_without_force() {
     overwrite
         .args([
             "github-agent-skill",
-            "-o",
+            "-i",
             skills_dir.to_str().expect("utf-8 path"),
         ])
         .assert()
