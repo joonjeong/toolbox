@@ -10,11 +10,46 @@ permissions:
   contents: write
 
 jobs:
+  changes:
+    name: Check release changes
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.changes.outputs.should_release }}
+      target_sha: ${{ steps.changes.outputs.target_sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check changes since latest release
+        id: changes
+        shell: bash
+        run: scripts/weekly-release-changes --target-ref HEAD >> "${GITHUB_OUTPUT}"
+
+      - name: Report release decision
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${{ steps.changes.outputs.latest_tag }}" ]]; then
+            echo "No previous release tag found; release will run."
+            exit 0
+          fi
+
+          if [[ "${{ steps.changes.outputs.should_release }}" == "false" ]]; then
+            echo "No commits since ${{ steps.changes.outputs.latest_tag }}; skipping weekly release."
+            exit 0
+          fi
+
+          echo "${{ steps.changes.outputs.commits_since_latest }} commits since ${{ steps.changes.outputs.latest_tag }}; release will run."
+
   release:
     name: Release
+    needs: changes
+    if: needs.changes.outputs.should_release == 'true'
     uses: ./.github/workflows/release.yml
     with:
       build: ${{ github.run_number }}
       head: "0"
-      target_ref: ${{ github.sha }}
+      target_ref: ${{ needs.changes.outputs.target_sha }}
       timezone: Asia/Seoul

@@ -49,6 +49,8 @@ Release distribution is handled by GitHub Actions:
   tag/version calculation paths for releases.
 - The weekly release workflow runs every Sunday at 10:00 KST using cron
   `0 1 * * 0`.
+- Weekly release workflow runs should skip release creation when HEAD has no
+  commits after the latest merged `v*` release tag.
 - Weekly automated releases use LINE HeadVer: `{head}.{yearweek}.{build}`.
   Keep the head value at `0` until the user explicitly changes it. Calculate
   `{yearweek}` with ISO week-year/week in KST, and use the GitHub Actions run
@@ -59,6 +61,8 @@ Release distribution is handled by GitHub Actions:
 - Use `scripts/release-metadata` to prepare release tags, titles, notes, target
   commits, and asset suffixes instead of building those values inline in
   workflow YAML.
+- Use `scripts/weekly-release-changes` for weekly release skip decisions instead
+  of duplicating git tag comparison logic in workflow YAML.
 - Keep release build/upload logic in `.github/workflows/release.yml`. If
   `.github/workflows/weekly-release.yml` exists, it should pass the HeadVer
   inputs to `release.yml` instead of duplicating metadata generation or the

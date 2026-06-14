@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/weekly-release-changes [--target-ref REF] [--tag-pattern PATTERN]
+
+Decide whether a weekly release should run by comparing the target commit with
+the latest merged release tag.
+
+Options:
+  --target-ref REF      Git ref or SHA to check. Defaults to HEAD.
+  --tag-pattern GLOB    Release tag glob. Defaults to v*.
+
+Output:
+  key=value lines suitable for appending to GITHUB_OUTPUT:
+  target_ref, target_sha, latest_tag, commits_since_latest, should_release.
+EOF
+}
+
+target_ref="HEAD"
+tag_pattern="v*"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --target-ref)
+      target_ref="${2:?missing value for --target-ref}"
+      shift 2
+      ;;
+    --tag-pattern)
+      tag_pattern="${2:?missing value for --tag-pattern}"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [[ "$(git rev-parse --is-shallow-repository 2>/dev/null)" == "true" ]]; then
+  echo "error: shallow clone detected; full history and tags are required to detect weekly release changes." >&2
+  echo "Configure actions/checkout with fetch-depth: 0 before running this script." >&2
+  exit 1
+fi
+
+target_sha="$(git rev-parse "${target_ref}^{commit}")"
+merged_tags="$(git tag --merged "${target_sha}" --list "${tag_pattern}" --sort=-v:refname)"
+latest_tag="${merged_tags%%$'\n'*}"
+
+printf 'target_ref=%s\n' "${target_ref}"
+printf 'target_sha=%s\n' "${target_sha}"
+printf 'latest_tag=%s\n' "${latest_tag}"
+
+if [[ -z "${latest_tag}" ]]; then
+  printf 'commits_since_latest=%s\n' ''
+  printf 'should_release=true\n'
+  exit 0
+fi
+
+commits_since_latest="$(git rev-list --count "${latest_tag}..${target_sha}")"
+printf 'commits_since_latest=%s\n' "${commits_since_latest}"
+
+if [[ "${commits_since_latest}" == "0" ]]; then
+  printf 'should_release=false\n'
+else
+  printf 'should_release=true\n'
+fi
