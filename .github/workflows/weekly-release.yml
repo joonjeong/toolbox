@@ -15,8 +15,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       asset_suffix: ${{ steps.headver.outputs.asset_suffix }}
+      release_name: ${{ steps.headver.outputs.release_name }}
+      release_notes: ${{ steps.headver.outputs.release_notes }}
       release_tag: ${{ steps.headver.outputs.release_tag }}
-      release_version: ${{ steps.headver.outputs.release_version }}
       should_release: ${{ steps.headver.outputs.should_release }}
       target_sha: ${{ steps.headver.outputs.target_sha }}
     steps:
@@ -39,12 +40,20 @@ jobs:
           release_version="${HEADVER_MAJOR}.${commit_count}.0"
           release_tag="v${release_version}"
           asset_suffix="${release_tag#v}"
+          release_name="toolbox ${release_tag}"
+          release_notes="Automated weekly headver release ${release_version} for ${target_sha}."
 
           {
             echo "target_sha=${target_sha}"
             echo "release_version=${release_version}"
             echo "release_tag=${release_tag}"
             echo "asset_suffix=${asset_suffix}"
+            echo "release_name=${release_name}"
+            {
+              echo "release_notes<<EOF"
+              echo "${release_notes}"
+              echo "EOF"
+            }
           } >> "${GITHUB_OUTPUT}"
 
           if gh release view "${release_tag}" >/dev/null 2>&1; then
@@ -55,63 +64,14 @@ jobs:
 
           echo "should_release=true" >> "${GITHUB_OUTPUT}"
 
-      - name: Create GitHub release
-        if: steps.headver.outputs.should_release == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ steps.headver.outputs.release_tag }}
-          RELEASE_VERSION: ${{ steps.headver.outputs.release_version }}
-          TARGET_SHA: ${{ steps.headver.outputs.target_sha }}
-        run: |
-          gh release create "${RELEASE_TAG}" \
-            --target "${TARGET_SHA}" \
-            --title "toolbox ${RELEASE_TAG}" \
-            --notes "Automated weekly headver release ${RELEASE_VERSION} for ${TARGET_SHA}."
-
-  build:
-    name: Build ${{ matrix.asset }}
+  release:
+    name: Release
     needs: prepare
     if: needs.prepare.outputs.should_release == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            asset: toolbox-linux-x86_64
-          - os: macos-13
-            target: x86_64-apple-darwin
-            asset: toolbox-macos-x86_64
-          - os: macos-14
-            target: aarch64-apple-darwin
-            asset: toolbox-macos-aarch64
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.prepare.outputs.target_sha }}
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Build
-        run: cargo build --release --target ${{ matrix.target }} --bin toolbox
-
-      - name: Package
-        shell: bash
-        env:
-          ASSET_NAME: ${{ matrix.asset }}-${{ needs.prepare.outputs.asset_suffix }}
-        run: |
-          mkdir -p dist
-          cp "target/${{ matrix.target }}/release/toolbox" "dist/${ASSET_NAME}"
-          chmod +x "dist/${ASSET_NAME}"
-          shasum -a 256 "dist/${ASSET_NAME}" > "dist/${ASSET_NAME}.sha256"
-
-      - name: Upload release assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
-        run: gh release upload "${RELEASE_TAG}" dist/* --clobber
+    uses: ./.github/workflows/release.yml
+    with:
+      asset_suffix: ${{ needs.prepare.outputs.asset_suffix }}
+      release_name: ${{ needs.prepare.outputs.release_name }}
+      release_notes: ${{ needs.prepare.outputs.release_notes }}
+      release_tag: ${{ needs.prepare.outputs.release_tag }}
+      target_ref: ${{ needs.prepare.outputs.target_sha }}

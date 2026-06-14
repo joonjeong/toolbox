@@ -48,8 +48,12 @@ Release distribution is handled by GitHub Actions:
 - Tag pushes matching `v*` build release binaries and upload assets.
 - The weekly release workflow runs every Sunday at 10:00 KST using cron
   `0 1 * * 0`.
-- Weekly automated releases use a headver-style version while the major version
-  remains `0`: `v0.<commit-count>.0`.
+- Weekly automated releases use a headver tag while the major version remains
+  `0`: `v0.<head-commit-count>.0`. Do not reinterpret this as semantic
+  compatibility versioning.
+- Keep release build/upload logic in `.github/workflows/release.yml`. If
+  `.github/workflows/weekly-release.yml` exists, it should calculate the headver
+  tag and call `release.yml` instead of duplicating the release build matrix.
 
 When changing release workflows, keep Linux x86_64, macOS x86_64, and macOS
 aarch64 assets working unless the user explicitly changes the support matrix.
