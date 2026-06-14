@@ -277,7 +277,7 @@ pub fn create_app_agent_workflow_skill(args: AppAgentWorkflowSkillArgs) -> Resul
 fn read_private_key(args: &AppAuthArgs) -> Result<String> {
     match (&args.private_key, &args.private_key_file, &args.private_key_path) {
         (Some(_), Some(_), _) | (Some(_), _, Some(_)) | (_, Some(_), Some(_)) => Err(anyhow!(
-            "use only one of --private-key or --private-key-file"
+            "use only one of --private-key, --private-key-file, or --private-key-path"
         )),
         (Some(key), None, None) => Ok(key.clone()),
         (None, Some(path), None) | (None, None, Some(path)) => fs::read_to_string(path)
