@@ -66,3 +66,12 @@ the project is ready for a stable head value, automated releases use head `0` in
 the form `v0.<yearweek>.<build>`. The weekly workflow only calculates the
 HeadVer tag and delegates release creation, builds, and asset uploads to the
 release workflow.
+
+HeadVer values are calculated by `scripts/headver`:
+
+```sh
+scripts/headver --head 0 --build 123 --timezone Asia/Seoul
+```
+
+The script emits `key=value` lines, including `version`, `tag`, and
+`asset_suffix`, so CI can append it directly to `$GITHUB_OUTPUT`.

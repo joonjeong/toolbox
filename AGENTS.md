@@ -53,6 +53,8 @@ Release distribution is handled by GitHub Actions:
   `{yearweek}` with ISO week-year/week in KST, and use the GitHub Actions run
   number as `{build}`. Do not reinterpret HeadVer as semantic compatibility
   versioning or commit-count versioning.
+- Use `scripts/headver` for HeadVer calculation instead of duplicating date
+  logic in workflow YAML.
 - Keep release build/upload logic in `.github/workflows/release.yml`. If
   `.github/workflows/weekly-release.yml` exists, it should calculate the headver
   tag and call `release.yml` instead of duplicating the release build matrix.

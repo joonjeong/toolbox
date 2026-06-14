@@ -26,25 +26,22 @@ jobs:
       - name: Calculate headver
         id: headver
         env:
-          HEADVER_BUILD: ${{ github.run_number }}
           HEADVER_HEAD: "0"
         shell: bash
         run: |
           set -euo pipefail
 
           target_sha="$(git rev-parse HEAD)"
-          yearweek="$(TZ=Asia/Seoul date +%g%V)"
-          release_version="${HEADVER_HEAD}.${yearweek}.${HEADVER_BUILD}"
-          release_tag="v${release_version}"
-          asset_suffix="${release_tag#v}"
+          headver_output="$(scripts/headver --build "${GITHUB_RUN_NUMBER}")"
+          echo "${headver_output}" >> "${GITHUB_OUTPUT}"
+
+          release_version="$(awk -F= '$1 == "version" { print $2 }' <<< "${headver_output}")"
+          release_tag="$(awk -F= '$1 == "tag" { print $2 }' <<< "${headver_output}")"
           release_name="toolbox ${release_tag}"
           release_notes="Automated weekly HeadVer release ${release_version} for ${target_sha}."
 
           {
             echo "target_sha=${target_sha}"
-            echo "release_version=${release_version}"
-            echo "release_tag=${release_tag}"
-            echo "asset_suffix=${asset_suffix}"
             echo "release_name=${release_name}"
             {
               echo "release_notes<<EOF"

@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/headver [--head N] [--build N] [--timezone TZ] [--date ISO_DATE] [--prefix PREFIX]
+
+Calculate a LINE HeadVer value in the form {head}.{yearweek}.{build}.
+
+Options:
+  --head N       Manual HeadVer head value. Defaults to HEADVER_HEAD or 0.
+  --build N      Build value. Defaults to HEADVER_BUILD, GITHUB_RUN_NUMBER, or 0.
+  --timezone TZ  IANA timezone used for yearweek. Defaults to HEADVER_TIMEZONE or Asia/Seoul.
+  --date DATE    ISO date/datetime used instead of now. Defaults to HEADVER_DATE or current time.
+  --prefix P     Tag prefix. Defaults to HEADVER_PREFIX or v.
+
+Output:
+  key=value lines suitable for appending to GITHUB_OUTPUT.
+EOF
+}
+
+head="${HEADVER_HEAD:-0}"
+build="${HEADVER_BUILD:-${GITHUB_RUN_NUMBER:-0}}"
+timezone="${HEADVER_TIMEZONE:-Asia/Seoul}"
+date_value="${HEADVER_DATE:-}"
+prefix="${HEADVER_PREFIX:-v}"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --head)
+      head="${2:?missing value for --head}"
+      shift 2
+      ;;
+    --build)
+      build="${2:?missing value for --build}"
+      shift 2
+      ;;
+    --timezone)
+      timezone="${2:?missing value for --timezone}"
+      shift 2
+      ;;
+    --date)
+      date_value="${2:?missing value for --date}"
+      shift 2
+      ;;
+    --prefix)
+      prefix="${2:?missing value for --prefix}"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+case "${head}" in
+  ''|*[!0-9]*)
+    echo "head must be a non-negative integer: ${head}" >&2
+    exit 2
+    ;;
+esac
+
+case "${build}" in
+  ''|*[!0-9]*)
+    echo "build must be a non-negative integer: ${build}" >&2
+    exit 2
+    ;;
+esac
+
+yearweek="$(
+  HEADVER_DATE="${date_value}" HEADVER_TIMEZONE="${timezone}" python3 - <<'PY'
+from __future__ import annotations
+
+import datetime as dt
+import os
+import sys
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+date_value = os.environ.get("HEADVER_DATE", "")
+timezone = os.environ["HEADVER_TIMEZONE"]
+
+try:
+    tz = ZoneInfo(timezone)
+except ZoneInfoNotFoundError:
+    print(f"unknown timezone: {timezone}", file=sys.stderr)
+    sys.exit(2)
+
+if date_value:
+    normalized = date_value.replace("Z", "+00:00")
+    try:
+        value = dt.datetime.fromisoformat(normalized)
+    except ValueError:
+        try:
+            value = dt.datetime.combine(dt.date.fromisoformat(date_value), dt.time())
+        except ValueError:
+            print(f"date must be ISO-8601 date or datetime: {date_value}", file=sys.stderr)
+            sys.exit(2)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=tz)
+    else:
+        value = value.astimezone(tz)
+else:
+    value = dt.datetime.now(tz)
+
+iso_year, iso_week, _ = value.isocalendar()
+print(f"{iso_year % 100:02d}{iso_week:02d}")
+PY
+)"
+
+version="${head}.${yearweek}.${build}"
+tag="${prefix}${version}"
+
+printf 'head=%s\n' "${head}"
+printf 'yearweek=%s\n' "${yearweek}"
+printf 'build=%s\n' "${build}"
+printf 'version=%s\n' "${version}"
+printf 'tag=%s\n' "${tag}"
+printf 'asset_suffix=%s\n' "${version}"
+printf 'release_version=%s\n' "${version}"
+printf 'release_tag=%s\n' "${tag}"
