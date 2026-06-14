@@ -10,53 +10,11 @@ permissions:
   contents: write
 
 jobs:
-  prepare:
-    name: Prepare headver release
-    runs-on: ubuntu-latest
-    outputs:
-      asset_suffix: ${{ steps.headver.outputs.asset_suffix }}
-      release_name: ${{ steps.headver.outputs.release_name }}
-      release_notes: ${{ steps.headver.outputs.release_notes }}
-      release_tag: ${{ steps.headver.outputs.release_tag }}
-      target_sha: ${{ steps.headver.outputs.target_sha }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Calculate headver
-        id: headver
-        env:
-          HEADVER_HEAD: "0"
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          target_sha="$(git rev-parse HEAD)"
-          headver_output="$(scripts/headver --build "${GITHUB_RUN_NUMBER}")"
-          echo "${headver_output}" >> "${GITHUB_OUTPUT}"
-
-          release_version="$(awk -F= '$1 == "version" { print $2 }' <<< "${headver_output}")"
-          release_tag="$(awk -F= '$1 == "tag" { print $2 }' <<< "${headver_output}")"
-          release_name="toolbox ${release_tag}"
-          release_notes="Automated weekly HeadVer release ${release_version} for ${target_sha}."
-
-          {
-            echo "target_sha=${target_sha}"
-            echo "release_name=${release_name}"
-            {
-              echo "release_notes<<EOF"
-              echo "${release_notes}"
-              echo "EOF"
-            }
-          } >> "${GITHUB_OUTPUT}"
-
   release:
     name: Release
-    needs: prepare
     uses: ./.github/workflows/release.yml
     with:
-      asset_suffix: ${{ needs.prepare.outputs.asset_suffix }}
-      release_name: ${{ needs.prepare.outputs.release_name }}
-      release_notes: ${{ needs.prepare.outputs.release_notes }}
-      release_tag: ${{ needs.prepare.outputs.release_tag }}
-      target_ref: ${{ needs.prepare.outputs.target_sha }}
+      build: ${{ github.run_number }}
+      head: "0"
+      target_ref: ${{ github.sha }}
+      timezone: Asia/Seoul

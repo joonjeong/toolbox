@@ -3,28 +3,24 @@ name: Release
 on:
   workflow_call:
     inputs:
-      release_tag:
-        description: "Release tag to create or update."
-        required: true
-        type: string
       target_ref:
         description: "Git ref or SHA to build and attach to the release."
         required: true
         type: string
-      asset_suffix:
-        description: "Suffix appended to binary asset names."
+      head:
+        description: "LINE HeadVer head value."
+        required: false
+        default: "0"
+        type: string
+      build:
+        description: "LINE HeadVer build value."
         required: true
         type: string
-      release_name:
-        description: "GitHub release title."
-        required: true
+      timezone:
+        description: "Timezone used for LINE HeadVer yearweek."
+        required: false
+        default: "Asia/Seoul"
         type: string
-      release_notes:
-        description: "GitHub release notes."
-        required: true
-        type: string
-  push:
-    tags: ["v*"]
 
 permissions:
   contents: write
@@ -38,46 +34,23 @@ jobs:
       release_name: ${{ steps.metadata.outputs.release_name }}
       release_notes: ${{ steps.metadata.outputs.release_notes }}
       release_tag: ${{ steps.metadata.outputs.release_tag }}
-      target_ref: ${{ steps.metadata.outputs.target_ref }}
+      target_sha: ${{ steps.metadata.outputs.target_sha }}
     steps:
+      - name: Checkout target
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_ref }}
+
       - name: Resolve release metadata
         id: metadata
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          INPUT_ASSET_SUFFIX: ${{ inputs.asset_suffix }}
-          INPUT_RELEASE_NAME: ${{ inputs.release_name }}
-          INPUT_RELEASE_NOTES: ${{ inputs.release_notes }}
-          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
-          INPUT_TARGET_REF: ${{ inputs.target_ref }}
         shell: bash
         run: |
           set -euo pipefail
-
-          if [[ "${EVENT_NAME}" == "workflow_call" ]]; then
-            release_tag="${INPUT_RELEASE_TAG}"
-            target_ref="${INPUT_TARGET_REF}"
-            asset_suffix="${INPUT_ASSET_SUFFIX}"
-            release_name="${INPUT_RELEASE_NAME}"
-            release_notes="${INPUT_RELEASE_NOTES}"
-          else
-            release_tag="${GITHUB_REF_NAME}"
-            target_ref="${GITHUB_REF_NAME}"
-            asset_suffix="${release_tag#v}"
-            release_name="toolbox ${release_tag}"
-            release_notes="Release ${release_tag}."
-          fi
-
-          {
-            echo "release_tag=${release_tag}"
-            echo "target_ref=${target_ref}"
-            echo "asset_suffix=${asset_suffix}"
-            echo "release_name=${release_name}"
-            {
-              echo "release_notes<<EOF"
-              echo "${release_notes}"
-              echo "EOF"
-            }
-          } >> "${GITHUB_OUTPUT}"
+          scripts/release-metadata \
+            --target-ref "${{ inputs.target_ref }}" \
+            --head "${{ inputs.head }}" \
+            --build "${{ inputs.build }}" \
+            --timezone "${{ inputs.timezone }}" >> "${GITHUB_OUTPUT}"
 
       - name: Create GitHub release
         env:
@@ -85,23 +58,17 @@ jobs:
           RELEASE_NAME: ${{ steps.metadata.outputs.release_name }}
           RELEASE_NOTES: ${{ steps.metadata.outputs.release_notes }}
           RELEASE_TAG: ${{ steps.metadata.outputs.release_tag }}
-          TARGET_REF: ${{ steps.metadata.outputs.target_ref }}
+          TARGET_REF: ${{ steps.metadata.outputs.target_sha }}
         run: |
           if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
             echo "Release ${RELEASE_TAG} already exists; assets will be uploaded."
             exit 0
           fi
 
-          if [[ "${{ github.event_name }}" == "workflow_call" ]]; then
-            gh release create "${RELEASE_TAG}" \
-              --target "${TARGET_REF}" \
-              --title "${RELEASE_NAME}" \
-              --notes "${RELEASE_NOTES}"
-          else
-            gh release create "${RELEASE_TAG}" \
-              --title "${RELEASE_NAME}" \
-              --notes "${RELEASE_NOTES}"
-          fi
+          gh release create "${RELEASE_TAG}" \
+            --target "${TARGET_REF}" \
+            --title "${RELEASE_NAME}" \
+            --notes "${RELEASE_NOTES}"
 
   build:
     name: Build ${{ matrix.asset }}
@@ -124,7 +91,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.prepare.outputs.target_ref }}
+          ref: ${{ needs.prepare.outputs.target_sha }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable

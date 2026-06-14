@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/release-metadata --target-ref REF [headver options]
+
+Create release metadata from a LINE HeadVer value.
+
+Required:
+  --target-ref REF  Git ref or SHA to attach to the release.
+
+HeadVer options are forwarded to scripts/headver:
+  --head N
+  --build N
+  --timezone TZ
+  --date DATE
+  --prefix P
+
+Output:
+  key=value lines suitable for appending to GITHUB_OUTPUT.
+EOF
+}
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+target_ref=""
+headver_args=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --target-ref)
+      target_ref="${2:?missing value for --target-ref}"
+      shift 2
+      ;;
+    --head|--build|--timezone|--date|--prefix)
+      headver_args+=("$1" "${2:?missing value for $1}")
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [[ -z "${target_ref}" ]]; then
+  echo "--target-ref is required" >&2
+  usage >&2
+  exit 2
+fi
+
+target_sha="$(git rev-parse "${target_ref}^{commit}")"
+headver_output="$("${script_dir}/headver" "${headver_args[@]}")"
+release_version="$(awk -F= '$1 == "version" { print $2 }' <<< "${headver_output}")"
+release_tag="$(awk -F= '$1 == "tag" { print $2 }' <<< "${headver_output}")"
+release_name="toolbox ${release_tag}"
+release_notes="Automated HeadVer release ${release_version} for ${target_sha}."
+
+printf '%s\n' "${headver_output}"
+printf 'target_ref=%s\n' "${target_ref}"
+printf 'target_sha=%s\n' "${target_sha}"
+printf 'release_name=%s\n' "${release_name}"
+printf 'release_notes=%s\n' "${release_notes}"
