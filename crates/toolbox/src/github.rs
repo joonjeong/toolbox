@@ -307,7 +307,7 @@ fn create_jwt(app_id: u64, private_key: &str) -> Result<String> {
         .context("failed to create GitHub App JWT")
 }
 
-fn resolve_installation_id(args: &AppAuthArgs, jwt: &str, client: &Client) -> Result<u64> {
+fn resolve_installation_id(args: &AppAuthArgs, client: &Client) -> Result<u64> {
     if let Some(installation_id) = args.installation_id {
         return Ok(installation_id);
     }
@@ -315,7 +315,7 @@ fn resolve_installation_id(args: &AppAuthArgs, jwt: &str, client: &Client) -> Re
     let repo = args.repo.as_deref().ok_or_else(|| {
         anyhow!("missing installation id; set --installation-id, GITHUB_APP_INSTALLATION_ID, or --repo OWNER/REPO")
     })?;
-    discover_installation_id(args, jwt, client, repo)
+    discover_installation_id(args, client, repo)
 }
 
 fn discover_installation_id(
