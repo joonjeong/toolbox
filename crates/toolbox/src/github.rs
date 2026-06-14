@@ -96,10 +96,15 @@ fn read_private_key(args: &AppAuthArgs) -> Result<String> {
 }
 
 fn create_jwt(app_id: u64, private_key: &str) -> Result<String> {
+    // The JWT is valid for 8 minutes, which is less than the 10-minute maximum.
+    const JWT_LIFETIME_SECONDS: i64 = 8 * 60;
+    // Account for clock skew by setting the "issued at" time to 60 seconds in the past.
+    const JWT_IAT_SKEW_SECONDS: i64 = 60;
+
     let now = OffsetDateTime::now_utc().unix_timestamp();
     let claims = Claims {
-        iat: now - 60,
-        exp: now + 8 * 60,
+        iat: now - JWT_IAT_SKEW_SECONDS,
+        exp: now + JWT_LIFETIME_SECONDS,
         iss: app_id.to_string(),
     };
 
