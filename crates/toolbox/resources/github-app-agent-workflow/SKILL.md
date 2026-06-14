@@ -42,9 +42,10 @@ toolbox github agent-skill --install-path /path/to/skills
 Provide:
 
 - `--app-id` or `GITHUB_APP_ID`
-- `--installation-id` or `GITHUB_APP_INSTALLATION_ID`
+- `--repo OWNER/REPO`
 - exactly one private key source:
   - `--private-key-file` or `GITHUB_APP_PRIVATE_KEY_FILE`
+  - `--private-key-path` or `GITHUB_APP_PRIVATE_KEY_PATH`
   - `--private-key` or `GITHUB_APP_PRIVATE_KEY`
 
 Prefer `--private-key-file` in shell commands so PEM contents do not appear in
@@ -60,9 +61,8 @@ Prefer a bounded token session for a coherent task. Mint once, run the related
   set +x
   export GH_TOKEN="$(
     toolbox github app-auth \
-      --repository OWNER/REPO \
+      --repo OWNER/REPO \
       --app-id "$GITHUB_APP_ID" \
-      --installation-id "$GITHUB_APP_INSTALLATION_ID" \
       --private-key-file /path/to/private-key.pem
   )"
   gh pr view 123 --repo OWNER/REPO
@@ -78,9 +78,10 @@ For issue or PR triage, reuse the same token for the whole read-only pass:
   set +x
   export GH_TOKEN="$(
     toolbox github app-auth \
-      --repository OWNER/REPO \
+      --repo OWNER/REPO \
       --app-id "$GITHUB_APP_ID" \
-      --installation-id "$GITHUB_APP_INSTALLATION_ID" \
+      --permission contents=read \
+      --permission pull_requests=read \
       --private-key-file /path/to/private-key.pem
   )"
   gh issue list --repo OWNER/REPO
@@ -97,9 +98,10 @@ the operation:
   set +x
   export GH_TOKEN="$(
     toolbox github app-auth \
-      --repository OWNER/REPO \
+      --repo OWNER/REPO \
       --app-id "$GITHUB_APP_ID" \
-      --installation-id "$GITHUB_APP_INSTALLATION_ID" \
+      --permission issues=write \
+      --permission pull_requests=write \
       --private-key-file /path/to/private-key.pem
   )"
   gh pr comment 123 --repo OWNER/REPO --body-file /tmp/comment.md
@@ -114,9 +116,10 @@ Use the token for direct GitHub API calls through `gh api` in the same session:
   set +x
   export GH_TOKEN="$(
     toolbox github app-auth \
-      --repository OWNER/REPO \
+      --repo OWNER/REPO \
       --app-id "$GITHUB_APP_ID" \
-      --installation-id "$GITHUB_APP_INSTALLATION_ID" \
+      --permission actions=read \
+      --permission contents=read \
       --private-key-file /path/to/private-key.pem
   )"
   gh api repos/OWNER/REPO/actions/runs --jq '.workflow_runs[0].status'
@@ -132,9 +135,8 @@ that name. Keep the same bounded-session pattern:
   set +x
   export GITHUB_TOKEN="$(
     toolbox github app-auth \
-      --repository OWNER/REPO \
+      --repo OWNER/REPO \
       --app-id "$GITHUB_APP_ID" \
-      --installation-id "$GITHUB_APP_INSTALLATION_ID" \
       --private-key-file /path/to/private-key.pem
   )"
   gh release view --repo OWNER/REPO
@@ -166,23 +168,23 @@ secret-safe destination. This prints a valid installation token to stdout:
 
 ```sh
 toolbox github app-auth \
-  --repository OWNER/REPO \
+  --repo OWNER/REPO \
   --app-id "$GITHUB_APP_ID" \
-  --installation-id "$GITHUB_APP_INSTALLATION_ID" \
   --private-key-file /path/to/private-key.pem
 ```
 
 `--shell` prints an export statement. Use it only inside a controlled subshell or
 CI step where logs are masked and shell tracing is disabled, then reuse that
-session for the related `gh` commands:
+session for the related `gh` commands. Add `--export-gh-token` so tools that
+look for either token variable work in the same session:
 
 ```sh
 (
   set +x
   eval "$(toolbox github app-auth --shell \
-    --repository OWNER/REPO \
+    --repo OWNER/REPO \
     --app-id "$GITHUB_APP_ID" \
-    --installation-id "$GITHUB_APP_INSTALLATION_ID" \
+    --export-gh-token \
     --private-key-file /path/to/private-key.pem)"
   gh pr view 123 --repo OWNER/REPO
   gh pr checks 123 --repo OWNER/REPO
@@ -203,17 +205,36 @@ toolbox github app-auth --jwt-only \
 
 Do not paste JWT output into issue comments, PR comments, build logs, or chat.
 
+For structured automation output:
+
+```sh
+toolbox github app-auth \
+  --repo OWNER/REPO \
+  --app-id "$GITHUB_APP_ID" \
+  --private-key-file /path/to/private-key.pem \
+  --format json
+```
+
 ## Options To Remember
 
 - `--api-url` or `GITHUB_API_URL`: override for GitHub Enterprise Server.
+- `--repo OWNER/REPO`: discover the app installation and scope the token to
+  that repository.
+- `--installation-id`: use a known installation ID and skip repository
+  installation discovery.
 - `--shell`: print `export GITHUB_TOKEN=...` instead of the raw token.
+- `--export-gh-token`: with `--shell`, also print `export GH_TOKEN=...`.
+- `--format json`: print structured JSON output instead of the raw token or JWT.
 - `--jwt-only`: do not call the installation token API.
-- `--repository OWNER/REPO`: repeat to scope a token to selected repositories.
+- `--repository OWNER/REPO`: repeat to scope a token to selected additional
+  repositories.
+- `--permission key=value`: repeat to request narrower token permissions.
 
 ## Operational Notes
 
 - Disable shell tracing (`set +x`) before command substitution or `eval`.
-- Scope tokens with `--repository OWNER/REPO` whenever possible.
+- Scope tokens with `--repo OWNER/REPO` or `--repository OWNER/REPO` whenever
+  possible.
 - Reuse one scoped token session for related `gh` commands instead of minting a
   new token for every API call.
 - Do not use `--private-key` in shell commands; it can leak through shell
