@@ -66,7 +66,8 @@ The weekly release workflow runs every Sunday at 10:00 KST and creates a
 the project is ready for a stable head value, automated releases use head `0` in
 the form `v0.<yearweek>.<build>`. The weekly workflow only calculates the
 HeadVer tag and delegates release creation, builds, and asset uploads to the
-release workflow.
+release workflow. If there are no commits after the latest merged `v*` release
+tag, the weekly workflow skips the release.
 
 HeadVer values are calculated by `scripts/headver`:
 
@@ -80,3 +81,7 @@ The script emits `key=value` lines, including `version`, `tag`, and
 Release metadata is calculated by `scripts/release-metadata`, which wraps
 `scripts/headver` and emits the release tag, title, notes, target commit, and
 asset suffix used by `.github/workflows/release.yml`.
+
+Weekly release change detection is calculated by `scripts/weekly-release-changes`.
+It emits `should_release=false` when the target commit has no commits after the
+latest merged `v*` release tag.
