@@ -51,6 +51,15 @@ Provide:
 Prefer `--private-key-file` in shell commands so PEM contents do not appear in
 shell history or process listings.
 
+For Ciel/Hermes-compatible environments that provide a private key path:
+
+```sh
+toolbox github app-auth \
+  --repo OWNER/REPO \
+  --app-id "$GITHUB_APP_ID" \
+  --private-key-file "$GITHUB_APP_PRIVATE_KEY_PATH"
+```
+
 ## Preferred `gh` Workflows
 
 Prefer a bounded token session for a coherent task. Mint once, run the related
@@ -146,6 +155,19 @@ that name. Keep the same bounded-session pattern:
 Pass `OWNER/REPO` for readability. The command sends only repository names to
 GitHub's installation token API, as required by GitHub.
 
+For agents and `gh`, the most direct export form is:
+
+```sh
+(
+  set +x
+  export GH_TOKEN="$(toolbox github app-auth \
+    --repo OWNER/REPO \
+    --app-id "$GITHUB_APP_ID" \
+    --private-key-file "$GITHUB_APP_PRIVATE_KEY_PATH")"
+  gh pr view 123 --repo OWNER/REPO
+)
+```
+
 ## Session Reuse Rules
 
 - Mint once per coherent task, not once per `gh` command.
@@ -173,18 +195,16 @@ toolbox github app-auth \
   --private-key-file /path/to/private-key.pem
 ```
 
-`--shell` prints an export statement. Use it only inside a controlled subshell or
-CI step where logs are masked and shell tracing is disabled, then reuse that
-session for the related `gh` commands. Add `--export-gh-token` so tools that
-look for either token variable work in the same session:
+Use shell-native command substitution inside a controlled subshell or CI step
+where logs are masked and shell tracing is disabled, then reuse that session for
+the related `gh` commands:
 
 ```sh
 (
   set +x
-  eval "$(toolbox github app-auth --shell \
+  export GH_TOKEN="$(toolbox github app-auth \
     --repo OWNER/REPO \
     --app-id "$GITHUB_APP_ID" \
-    --export-gh-token \
     --private-key-file /path/to/private-key.pem)"
   gh pr view 123 --repo OWNER/REPO
   gh pr checks 123 --repo OWNER/REPO
@@ -215,26 +235,37 @@ toolbox github app-auth \
   --format json
 ```
 
+JSON output is diagnostic-first and never includes the installation token. Use
+the default text output when the caller needs the token.
+
 ## Options To Remember
 
 - `--api-url` or `GITHUB_API_URL`: override for GitHub Enterprise Server.
-- `--repo OWNER/REPO`: discover the app installation and scope the token to
-  that repository.
+- `--repo OWNER/REPO`: scope the token to a repository. Repeat `--repo` for
+  multiple repositories. Without `--installation-id`, the first `--repo` value
+  is also used to discover the app installation.
 - `--installation-id`: use a known installation ID and skip repository
   installation discovery.
-- `--shell`: print `export GITHUB_TOKEN=...` instead of the raw token.
-- `--export-gh-token`: with `--shell`, also print `export GH_TOKEN=...`.
 - `--format json`: print structured JSON output instead of the raw token or JWT.
 - `--jwt-only`: do not call the installation token API.
-- `--repository OWNER/REPO`: repeat to scope a token to selected additional
-  repositories.
 - `--permission key=value`: repeat to request narrower token permissions.
+
+## Common Failure Cases
+
+- The App is not installed on the repository or owning account. A public
+  repository can still return `404` from installation discovery because public
+  release/download access is unrelated to GitHub App installation access.
+- Requested permissions are broader than the installation allows. Ask for equal
+  or narrower permissions, or update the App installation permissions first.
+- The token expired. Mint a new token and rerun the bounded session.
+- The private key path or environment variable is missing. Check
+  `--private-key-file`, `--private-key-path`, `GITHUB_APP_PRIVATE_KEY_FILE`, and
+  `GITHUB_APP_PRIVATE_KEY_PATH`.
 
 ## Operational Notes
 
-- Disable shell tracing (`set +x`) before command substitution or `eval`.
-- Scope tokens with `--repo OWNER/REPO` or `--repository OWNER/REPO` whenever
-  possible.
+- Disable shell tracing (`set +x`) before command substitution.
+- Scope tokens with `--repo OWNER/REPO` whenever possible.
 - Reuse one scoped token session for related `gh` commands instead of minting a
   new token for every API call.
 - Do not use `--private-key` in shell commands; it can leak through shell
@@ -253,5 +284,7 @@ toolbox github app-auth \
   hanging indefinitely.
 - The JWT is intentionally short-lived and remains below GitHub's 10-minute
   maximum lifetime.
+- Public release downloads can be tested without authentication. GitHub App auth
+  can only be fully tested against a repository where the App is installed.
 - Run `toolbox github app-auth --help` before changing scripts; the help output
   is the command contract for agent usage.
