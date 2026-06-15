@@ -16,8 +16,11 @@ The primary binary is `toolbox`. Commands can be used in three forms:
 
 ```sh
 toolbox github app-auth ...
+toolbox github app-exec ... -- COMMAND [ARG]...
 toolbox github-app-auth ...
+toolbox github-app-exec ... -- COMMAND [ARG]...
 github-app-auth ... # when symlinked to the toolbox binary
+github-app-exec ... # when symlinked to the toolbox binary
 ```
 
 ## GitHub App authentication
@@ -67,6 +70,21 @@ Useful options:
 Public release downloads can be tested without authentication. GitHub App auth
 must be tested against a repository where the App is installed, even if the
 repository itself is public.
+
+`github app-exec` uses the same GitHub App authentication options, but runs a
+command with the temporary installation token set as both `GH_TOKEN` and
+`GITHUB_TOKEN`:
+
+```sh
+toolbox github app-exec \
+  --app-id "$GITHUB_APP_ID" \
+  --repo OWNER/REPO \
+  --private-key-file /path/to/private-key.pem \
+  -- gh pr comment 123 --body "Done"
+```
+
+The command after `--` inherits stdin, stdout, and stderr. `toolbox` exits with
+the child process exit code, so it can be used directly in automation.
 
 ## Agent skill
 

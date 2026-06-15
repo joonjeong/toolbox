@@ -17,11 +17,14 @@ const VERSION: &str = match option_env!("TOOLBOX_VERSION") {
 #[command(about = "Personal general-purpose CLI/TUI toolbox")]
 #[command(after_long_help = "Invocation forms:
   toolbox github app-auth ...
+  toolbox github app-exec ... -- COMMAND [ARG]...
   toolbox github-app-auth ...
+  toolbox github-app-exec ... -- COMMAND [ARG]...
   github-app-auth ...        when symlinked to the toolbox binary
+  github-app-exec ...        when symlinked to the toolbox binary
   toolbox github agent-skill --install-path DIR ...
 
-Run `toolbox github app-auth --help` for GitHub App authentication options and examples.")]
+Run `toolbox github app-auth --help` or `toolbox github app-exec --help` for GitHub App authentication options and examples.")]
 pub struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -33,6 +36,14 @@ pub struct Cli {
 struct GithubAppAuthCli {
     #[command(flatten)]
     args: github::AppAuthArgs,
+}
+
+#[derive(Debug, Parser)]
+#[command(name = "github-app-exec")]
+#[command(version = VERSION)]
+struct GithubAppExecCli {
+    #[command(flatten)]
+    args: github::AppExecArgs,
 }
 
 #[derive(Debug, Parser)]
@@ -49,6 +60,8 @@ enum Command {
     Github(GithubCommand),
     /// Authenticate as a GitHub App installation.
     GithubAppAuth(github::AppAuthArgs),
+    /// Run a command with a GitHub App installation token.
+    GithubAppExec(github::AppExecArgs),
     /// Create the GitHub App agent workflow skill.
     GithubAgentSkill(github::AppAgentWorkflowSkillArgs),
 }
@@ -64,6 +77,8 @@ struct GithubCommand {
 enum GithubSubcommand {
     /// Authenticate as a GitHub App installation.
     AppAuth(github::AppAuthArgs),
+    /// Run a command with a GitHub App installation token.
+    AppExec(github::AppExecArgs),
     /// Create the GitHub App agent workflow skill.
     AgentSkill(github::AppAgentWorkflowSkillArgs),
 }
@@ -94,6 +109,13 @@ where
     }
     if matches!(
         invoked_as.as_str(),
+        "github-app-exec" | "toolbox-github-app-exec"
+    ) {
+        let cli = GithubAppExecCli::parse_from(args);
+        return github::app_exec(cli.args);
+    }
+    if matches!(
+        invoked_as.as_str(),
         "github-agent-skill" | "toolbox-github-agent-skill"
     ) {
         let cli = GithubAgentSkillCli::parse_from(args);
@@ -104,9 +126,11 @@ where
     match cli.command {
         Command::Github(github_command) => match github_command.command {
             GithubSubcommand::AppAuth(args) => github::app_auth(args),
+            GithubSubcommand::AppExec(args) => github::app_exec(args),
             GithubSubcommand::AgentSkill(args) => github::create_app_agent_workflow_skill(args),
         },
         Command::GithubAppAuth(args) => github::app_auth(args),
+        Command::GithubAppExec(args) => github::app_exec(args),
         Command::GithubAgentSkill(args) => github::create_app_agent_workflow_skill(args),
     }
 }
