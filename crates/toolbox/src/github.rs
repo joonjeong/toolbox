@@ -697,6 +697,14 @@ fn run_with_installation_token(command: &[OsString], token: &str) -> Result<()> 
         std::process::exit(code);
     }
 
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(signal) = status.signal() {
+            std::process::exit(128 + signal);
+        }
+    }
+
     Err(anyhow!("command terminated before exiting"))
 }
 

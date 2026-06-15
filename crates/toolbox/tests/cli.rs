@@ -258,6 +258,35 @@ fn github_app_run_exits_with_child_exit_code() {
     assert!(request.starts_with("post /app/installations/42/access_tokens "));
 }
 
+#[cfg(unix)]
+#[test]
+fn github_app_run_exits_with_child_signal_status() {
+    let (api_url, server) = one_token_response_server();
+    let mut cmd = Command::cargo_bin("toolbox").expect("binary exists");
+
+    cmd.args([
+        "github",
+        "app-run",
+        "--app-id",
+        "1",
+        "--installation-id",
+        "42",
+        "--api-url",
+        &api_url,
+        "--private-key",
+        TEST_RSA_PRIVATE_KEY,
+        "--",
+        "sh",
+        "-c",
+        "kill -TERM $$",
+    ])
+    .assert()
+    .code(143);
+
+    let request = server.join().expect("server thread completed");
+    assert!(request.starts_with("post /app/installations/42/access_tokens "));
+}
+
 #[test]
 fn github_app_run_requires_command_after_separator() {
     let mut cmd = Command::cargo_bin("toolbox").expect("binary exists");
