@@ -173,16 +173,18 @@ Do not re-export those variables into the child command unless explicitly
 debugging the authentication flow. The child should operate with the scoped
 installation token only.
 
-## Direct Token Output
+## Authentication Diagnostics
 
-Avoid direct token output. `toolbox github app-auth` exists for integrations
-that truly need the token string, but it prints a valid installation token to
-stdout by default. That output can leak through logs, shell tracing, command
-substitution, process environments, terminal scrollback, or copy/paste.
+Avoid direct token output during ordinary agent work. `toolbox github app-auth`
+is primarily for debugging GitHub App authentication behavior: JWT signing,
+installation discovery, installation token exchange, requested permissions, and
+repository scoping. It prints a valid installation token to stdout by default,
+so that output can leak through logs, shell tracing, command substitution,
+process environments, terminal scrollback, or copy/paste.
 
-Only use `app-auth` when the caller has a concrete secret-safe destination and
-`app-run` cannot satisfy the workflow. Prefer this command for ordinary agent
-GitHub work:
+Only use `app-auth` when diagnosing the app-based authentication flow or when an
+external integration truly requires the token string and has a concrete
+secret-safe destination. Prefer this command for ordinary agent GitHub work:
 
 ```sh
 toolbox github app-run \
@@ -192,9 +194,10 @@ toolbox github app-run \
   -- gh pr view 123 --repo OWNER/REPO
 ```
 
-If `app-auth` is unavoidable, disable shell tracing, never log stdout, and do
-not persist the token with `gh auth login --with-token` unless persistent local
-authentication is explicitly intended and cleaned up afterward.
+If `app-auth` is unavoidable, treat the session as a debugging or integration
+boundary: disable shell tracing, never log stdout, and do not persist the token
+with `gh auth login --with-token` unless persistent local authentication is
+explicitly intended and cleaned up afterward.
 
 Print only the GitHub App JWT for debugging:
 
@@ -250,6 +253,8 @@ JSON output is diagnostic-first and never includes the installation token.
 
 - Use `app-run` for ordinary agent GitHub work; do not export `GH_TOKEN`
   manually.
+- Treat `app-auth` as a diagnostic command for app-based authentication behavior
+  unless a non-agent integration explicitly needs token stdout.
 - Scope tokens with `--repo OWNER/REPO` whenever possible.
 - Request only the permissions needed by the child command.
 - Do not use `--private-key` in shell commands; it can leak through shell

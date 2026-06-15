@@ -25,26 +25,42 @@ github-app-run ... # when symlinked to the toolbox binary
 
 ## GitHub App authentication
 
-`github app-auth` creates a GitHub App JWT and exchanges it for an installation
-access token. It is intended for coding agents that need to work on GitHub
-issues or pull requests as a GitHub App installation.
+`github app-run` is the preferred command for coding agents that need to work on
+GitHub issues or pull requests as a GitHub App installation. It creates a
+short-lived installation token, runs the child command with that token set as
+both `GH_TOKEN` and `GITHUB_TOKEN`, and avoids printing or exporting the token
+in the parent shell:
 
 ```sh
-toolbox github app-auth \
+toolbox github app-run \
   --app-id "$GITHUB_APP_ID" \
   --repo OWNER/REPO \
-  --private-key-file /path/to/private-key.pem
+  --private-key-file /path/to/private-key.pem \
+  -- gh pr comment 123 --body "Done"
 ```
 
-The command prints the installation token to stdout. For `gh`, assign that
-token with shell-native command substitution:
+The command after `--` inherits stdin, stdout, stderr, the current working
+directory, `PATH`, and ordinary environment variables. GitHub App credential
+environment variables are removed from the child environment, so the child only
+receives the scoped installation token. Shell syntax such as pipes, redirects,
+aliases, and shell functions requires an explicit shell command:
 
 ```sh
-export GH_TOKEN="$(toolbox github app-auth \
+toolbox github app-run \
   --app-id "$GITHUB_APP_ID" \
   --repo OWNER/REPO \
-  --private-key-file /path/to/private-key.pem)"
+  --private-key-file /path/to/private-key.pem \
+  -- sh -c 'gh issue view 123 | jq .url'
 ```
+
+`toolbox` exits with the child process exit code, so it can be used directly in
+automation.
+
+`github app-auth` uses the same GitHub App authentication flow, but it is
+primarily a diagnostic command for debugging app-based authentication behavior:
+JWT signing, installation discovery, installation token exchange, requested
+permissions, and repository scoping. It prints the installation token to stdout
+by default, so do not use it for ordinary agent `gh` workflows.
 
 Supported environment variables:
 

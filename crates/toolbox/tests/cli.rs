@@ -54,8 +54,10 @@ fn shows_github_app_auth_agent_usage() {
         .stdout(
             predicate::str::contains("Sign a GitHub App JWT")
                 .and(predicate::str::contains(
-                    "export GH_TOKEN=\"$(toolbox github app-auth",
+                    "debugging app-based authentication behavior",
                 ))
+                .and(predicate::str::contains("toolbox github app-run"))
+                .and(predicate::str::contains("--format json"))
                 .and(predicate::str::contains("GITHUB_APP_PRIVATE_KEY_FILE"))
                 .and(predicate::str::contains("GITHUB_APP_PRIVATE_KEY_PATH"))
                 .and(predicate::str::contains("--repo <OWNER/REPO>"))
@@ -68,7 +70,8 @@ fn shows_github_app_auth_agent_usage() {
                 .and(predicate::str::contains("--repository").not())
                 .and(predicate::str::contains("--shell").not())
                 .and(predicate::str::contains("--export-gh-token").not())
-                .and(predicate::str::contains("--include-token").not()),
+                .and(predicate::str::contains("--include-token").not())
+                .and(predicate::str::contains("export GH_TOKEN").not()),
         );
 }
 
@@ -255,6 +258,35 @@ fn github_app_run_exits_with_child_exit_code() {
     assert!(request.starts_with("post /app/installations/42/access_tokens "));
 }
 
+#[cfg(unix)]
+#[test]
+fn github_app_run_exits_with_child_signal_status() {
+    let (api_url, server) = one_token_response_server();
+    let mut cmd = Command::cargo_bin("toolbox").expect("binary exists");
+
+    cmd.args([
+        "github",
+        "app-run",
+        "--app-id",
+        "1",
+        "--installation-id",
+        "42",
+        "--api-url",
+        &api_url,
+        "--private-key",
+        TEST_RSA_PRIVATE_KEY,
+        "--",
+        "sh",
+        "-c",
+        "kill -TERM $$",
+    ])
+    .assert()
+    .code(143);
+
+    let request = server.join().expect("server thread completed");
+    assert!(request.starts_with("post /app/installations/42/access_tokens "));
+}
+
 #[test]
 fn github_app_run_requires_command_after_separator() {
     let mut cmd = Command::cargo_bin("toolbox").expect("binary exists");
@@ -324,6 +356,7 @@ fn creates_github_app_agent_workflow_skill() {
     assert!(skill.contains("name: github-app-agent-workflow"));
     assert!(skill.contains("toolbox github app-run"));
     assert!(skill.contains("without printing the token or exporting it"));
+    assert!(skill.contains("primarily for debugging GitHub App authentication behavior"));
 
     fs::remove_dir_all(skills_dir).expect("temporary skill directory removed");
 }
