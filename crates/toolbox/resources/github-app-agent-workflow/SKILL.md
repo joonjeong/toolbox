@@ -11,9 +11,12 @@ the parent shell.
 
 Prefer this skill when GitHub access should come from a GitHub App installation
 rather than a personal token. The default workflow is token-non-disclosure:
-`toolbox` mints the installation token, injects it into the child process as
+`toolbox` obtains the installation token, injects it into the child process as
 `GH_TOKEN` and `GITHUB_TOKEN`, removes GitHub App credential environment
 variables from the child environment, and exits with the child command status.
+When a matching local cache entry exists, `app-run` checks its expiration and
+validates it with GitHub before reuse; rejected or expired cached tokens are
+replaced automatically.
 
 Do not ask the agent to print, copy, paste, log, persist, or manually export the
 temporary installation token. Use `app-run` for each GitHub command or each
@@ -173,6 +176,12 @@ Do not re-export those variables into the child command unless explicitly
 debugging the authentication flow. The child should operate with the scoped
 installation token only.
 
+`app-run` may reuse a matching locally cached installation token until it is
+near expiration. The cache is keyed by app, installation selector, API URL,
+repository scope, and requested permissions. Reuse still keeps the token inside
+the `app-run` child environment; it does not print the token or export it into
+the parent shell.
+
 ## Authentication Diagnostics
 
 Avoid direct token output during ordinary agent work. `toolbox github app-auth`
@@ -242,7 +251,8 @@ JSON output is diagnostic-first and never includes the installation token.
   release/download access is unrelated to GitHub App installation access.
 - Requested permissions are broader than the installation allows. Ask for equal
   or narrower permissions, or update the App installation permissions first.
-- The token expired. Rerun the `app-run` command to mint a fresh scoped token.
+- The token expired or GitHub rejects a cached token. `app-run` should
+  automatically mint a fresh scoped token.
 - The private key path or environment variable is missing. Check
   `--private-key-file`, `--private-key-path`, `GITHUB_APP_PRIVATE_KEY_FILE`, and
   `GITHUB_APP_PRIVATE_KEY_PATH`.

@@ -116,6 +116,11 @@ toolbox github app-run \
 `toolbox` exits with the child process exit code, so it can be used directly in
 automation.
 
+`app-run` caches installation tokens locally under the user cache directory
+while they remain valid. A cached token is reused only after its expiration is
+checked and GitHub accepts it for the installation; expired or rejected cache
+entries are replaced by a newly minted token.
+
 ## Agent skill
 
 The `toolbox` binary bundles a `github-app-agent-workflow` skill. It describes
