@@ -1,35 +1,35 @@
 ---
 name: github-app-agent-workflow
-description: Perform GitHub agent work through toolbox GitHub App authentication, using short-lived installation token sessions with gh safely. Use when an agent or automation needs to work on issues, pull requests, releases, or repository API calls through GitHub App credentials while avoiding personal access tokens, unnecessary token minting, persistent gh login, shell history leaks, or accidental token logging.
+description: Perform GitHub agent work through toolbox github-app-run without exposing temporary installation tokens. Use when an agent or automation needs to work on issues, pull requests, releases, or repository API calls through GitHub App credentials while avoiding personal access tokens, token stdout, shell exports, persistent gh login, shell history leaks, or accidental token logging.
 ---
 
 # GitHub App Agent Workflow
 
-Use the `toolbox` binary to sign a GitHub App JWT and exchange it for an
-installation access token, then pass that token to `gh` through a bounded
-environment session. Prefer this skill when GitHub access should come from a
-GitHub App installation rather than a personal token.
+Use `toolbox github app-run` to run GitHub commands inside a short-lived GitHub
+App installation token context without printing the token or exporting it into
+the parent shell.
 
-Treat the auth flow as sensitive. The command can print valid temporary tokens
-or JWTs, and those values can leak through logs, shell tracing, process
-environments, persistent `gh` auth state, or careless copy/paste.
+Prefer this skill when GitHub access should come from a GitHub App installation
+rather than a personal token. The default workflow is token-non-disclosure:
+`toolbox` mints the installation token, injects it into the child process as
+`GH_TOKEN` and `GITHUB_TOKEN`, removes GitHub App credential environment
+variables from the child environment, and exits with the child command status.
 
-Also avoid minting tokens more often than necessary. Create one installation
-token per coherent task or repository scope, reuse it for the related `gh`
-commands, then let the subshell or CI step end so the token leaves the
-environment.
+Do not ask the agent to print, copy, paste, log, persist, or manually export the
+temporary installation token. Use `app-run` for each GitHub command or each
+explicit shell command group.
 
 ## Command Forms
 
-Use any supported invocation form:
+Use any supported `app-run` invocation form:
 
 ```sh
-toolbox github app-auth [OPTIONS]
-toolbox github-app-auth [OPTIONS]
-github-app-auth [OPTIONS] # when this name is symlinked to the toolbox binary
+toolbox github app-run [OPTIONS] -- COMMAND [ARG]...
+toolbox github-app-run [OPTIONS] -- COMMAND [ARG]...
+github-app-run [OPTIONS] -- COMMAND [ARG]... # when symlinked to toolbox
 ```
 
-When scripting for portability, prefer `toolbox github app-auth`.
+When scripting for portability, prefer `toolbox github app-run`.
 
 To create this skill in another agent's skills directory, run:
 
@@ -48,172 +48,156 @@ Provide:
   - `--private-key-path` or `GITHUB_APP_PRIVATE_KEY_PATH`
   - `--private-key` or `GITHUB_APP_PRIVATE_KEY`
 
-Prefer `--private-key-file` in shell commands so PEM contents do not appear in
-shell history or process listings.
+Prefer `--private-key-file` or `--private-key-path` in shell commands so PEM
+contents do not appear in shell history or process listings.
 
 For Ciel/Hermes-compatible environments that provide a private key path:
 
 ```sh
-toolbox github app-auth \
+toolbox github app-run \
   --repo OWNER/REPO \
   --app-id "$GITHUB_APP_ID" \
-  --private-key-file "$GITHUB_APP_PRIVATE_KEY_PATH"
+  --private-key-file "$GITHUB_APP_PRIVATE_KEY_PATH" \
+  -- gh pr view 123 --repo OWNER/REPO
 ```
 
 ## Preferred `gh` Workflows
 
-Prefer a bounded token session for a coherent task. Mint once, run the related
-`gh` commands, then leave the subshell:
+Run each `gh` command through `app-run`. This avoids token stdout and avoids
+leaving `GH_TOKEN` in the parent shell:
 
 ```sh
-(
-  set +x
-  export GH_TOKEN="$(
-    toolbox github app-auth \
-      --repo OWNER/REPO \
-      --app-id "$GITHUB_APP_ID" \
-      --private-key-file /path/to/private-key.pem
-  )"
-  gh pr view 123 --repo OWNER/REPO
-  gh pr checks 123 --repo OWNER/REPO
-  gh pr diff 123 --repo OWNER/REPO --name-only
-)
+toolbox github app-run \
+  --repo OWNER/REPO \
+  --app-id "$GITHUB_APP_ID" \
+  --private-key-file /path/to/private-key.pem \
+  -- gh pr view 123 --repo OWNER/REPO
 ```
 
-For issue or PR triage, reuse the same token for the whole read-only pass:
+For issue or PR triage, request only the permissions needed for that read-only
+operation:
 
 ```sh
-(
-  set +x
-  export GH_TOKEN="$(
-    toolbox github app-auth \
-      --repo OWNER/REPO \
-      --app-id "$GITHUB_APP_ID" \
-      --permission contents=read \
-      --permission pull_requests=read \
-      --private-key-file /path/to/private-key.pem
-  )"
-  gh issue list --repo OWNER/REPO
-  gh pr list --repo OWNER/REPO
-  gh pr checks 123 --repo OWNER/REPO
-)
+toolbox github app-run \
+  --repo OWNER/REPO \
+  --app-id "$GITHUB_APP_ID" \
+  --permission contents=read \
+  --permission pull_requests=read \
+  --private-key-file /path/to/private-key.pem \
+  -- gh pr checks 123 --repo OWNER/REPO
 ```
 
-For a write workflow, mint once for the smallest repository scope that covers
-the operation:
+For a write workflow, scope the token to the smallest repository and permission
+set that covers the operation:
 
 ```sh
-(
-  set +x
-  export GH_TOKEN="$(
-    toolbox github app-auth \
-      --repo OWNER/REPO \
-      --app-id "$GITHUB_APP_ID" \
-      --permission issues=write \
-      --permission pull_requests=write \
-      --private-key-file /path/to/private-key.pem
-  )"
-  gh pr comment 123 --repo OWNER/REPO --body-file /tmp/comment.md
-  gh pr edit 123 --repo OWNER/REPO --add-label automation
-)
+toolbox github app-run \
+  --repo OWNER/REPO \
+  --app-id "$GITHUB_APP_ID" \
+  --permission issues=write \
+  --permission pull_requests=write \
+  --private-key-file /path/to/private-key.pem \
+  -- gh pr comment 123 --repo OWNER/REPO --body-file /tmp/comment.md
 ```
 
-Use the token for direct GitHub API calls through `gh api` in the same session:
+Use `gh api` the same way:
 
 ```sh
-(
-  set +x
-  export GH_TOKEN="$(
-    toolbox github app-auth \
-      --repo OWNER/REPO \
-      --app-id "$GITHUB_APP_ID" \
-      --permission actions=read \
-      --permission contents=read \
-      --private-key-file /path/to/private-key.pem
-  )"
-  gh api repos/OWNER/REPO/actions/runs --jq '.workflow_runs[0].status'
-  gh api repos/OWNER/REPO/releases/latest --jq '.tag_name'
-)
-```
-
-Use `GITHUB_TOKEN` instead of `GH_TOKEN` only when a tool specifically requires
-that name. Keep the same bounded-session pattern:
-
-```sh
-(
-  set +x
-  export GITHUB_TOKEN="$(
-    toolbox github app-auth \
-      --repo OWNER/REPO \
-      --app-id "$GITHUB_APP_ID" \
-      --private-key-file /path/to/private-key.pem
-  )"
-  gh release view --repo OWNER/REPO
-)
+toolbox github app-run \
+  --repo OWNER/REPO \
+  --app-id "$GITHUB_APP_ID" \
+  --permission actions=read \
+  --permission contents=read \
+  --private-key-file /path/to/private-key.pem \
+  -- gh api repos/OWNER/REPO/actions/runs --jq '.workflow_runs[0].status'
 ```
 
 Pass `OWNER/REPO` for readability. The command sends only repository names to
 GitHub's installation token API, as required by GitHub.
 
-For agents and `gh`, the most direct export form is:
+## Grouped Commands
+
+`app-run` executes the command after `--` directly. It does not invoke a shell.
+Pipes, redirects, shell functions, aliases, variable assignments, and command
+groups require an explicit shell:
 
 ```sh
-(
-  set +x
-  export GH_TOKEN="$(toolbox github app-auth \
-    --repo OWNER/REPO \
-    --app-id "$GITHUB_APP_ID" \
-    --private-key-file "$GITHUB_APP_PRIVATE_KEY_PATH")"
-  gh pr view 123 --repo OWNER/REPO
-)
-```
-
-## Session Reuse Rules
-
-- Mint once per coherent task, not once per `gh` command.
-- Reuse the token inside a single subshell, CI step, or tightly scoped process
-  environment.
-- Keep the session no broader than the repository set and operation class
-  required for the task.
-- Start a new token session when repository scope changes, privileges need to be
-  narrower, the token may have leaked, or a command fails due to expiration.
-- Do not cache installation tokens on disk. If reuse must cross process
-  boundaries, prefer a secret manager or CI secret-masking mechanism with a
-  clear cleanup path.
-- Do not keep one long-lived interactive shell loaded with `GH_TOKEN` just for
-  convenience. The goal is fewer token exchanges without widening exposure.
-
-## Direct Token Output
-
-Avoid direct token output unless the caller has a concrete reason and a
-secret-safe destination. This prints a valid installation token to stdout:
-
-```sh
-toolbox github app-auth \
+toolbox github app-run \
   --repo OWNER/REPO \
   --app-id "$GITHUB_APP_ID" \
-  --private-key-file /path/to/private-key.pem
+  --private-key-file /path/to/private-key.pem \
+  -- sh -c 'gh pr view "$1" --repo "$2" --json title,url | jq .url' sh 123 OWNER/REPO
 ```
 
-Use shell-native command substitution inside a controlled subshell or CI step
-where logs are masked and shell tracing is disabled, then reuse that session for
-the related `gh` commands:
+For several related `gh` commands, use one explicit shell command group. The
+token remains inside that child process tree and never appears in the parent
+shell:
 
 ```sh
-(
-  set +x
-  export GH_TOKEN="$(toolbox github app-auth \
-    --repo OWNER/REPO \
-    --app-id "$GITHUB_APP_ID" \
-    --private-key-file /path/to/private-key.pem)"
-  gh pr view 123 --repo OWNER/REPO
-  gh pr checks 123 --repo OWNER/REPO
-)
+toolbox github app-run \
+  --repo OWNER/REPO \
+  --app-id "$GITHUB_APP_ID" \
+  --permission contents=read \
+  --permission pull_requests=read \
+  --private-key-file /path/to/private-key.pem \
+  -- sh -c '
+    set -eu
+    gh pr view "$1" --repo "$2"
+    gh pr checks "$1" --repo "$2"
+    gh pr diff "$1" --repo "$2" --name-only
+  ' sh 123 OWNER/REPO
 ```
 
-Avoid `gh auth login --with-token` for temporary GitHub App tokens unless the
-goal is intentionally persistent local `gh` authentication. Prefer per-command
-or per-subshell `GH_TOKEN`.
+Keep grouped command blocks short and task-focused. Start a new `app-run`
+invocation when repository scope changes, privileges should be narrower, or a
+command fails due to expiration.
+
+## Environment Boundary
+
+The child command receives:
+
+- `GH_TOKEN` set to the temporary installation token
+- `GITHUB_TOKEN` set to the same temporary installation token
+- ordinary inherited environment such as `PATH`, locale, and working directory
+
+The child command does not receive these GitHub App credential variables:
+
+- `GITHUB_APP_ID`
+- `GITHUB_APP_INSTALLATION_ID`
+- `GITHUB_APP_PRIVATE_KEY`
+- `GITHUB_APP_PRIVATE_KEY_FILE`
+- `GITHUB_APP_PRIVATE_KEY_PATH`
+- `GITHUB_API_URL`
+
+Do not re-export those variables into the child command unless explicitly
+debugging the authentication flow. The child should operate with the scoped
+installation token only.
+
+## Authentication Diagnostics
+
+Avoid direct token output during ordinary agent work. `toolbox github app-auth`
+is primarily for debugging GitHub App authentication behavior: JWT signing,
+installation discovery, installation token exchange, requested permissions, and
+repository scoping. It prints a valid installation token to stdout by default,
+so that output can leak through logs, shell tracing, command substitution,
+process environments, terminal scrollback, or copy/paste.
+
+Only use `app-auth` when diagnosing the app-based authentication flow or when an
+external integration truly requires the token string and has a concrete
+secret-safe destination. Prefer this command for ordinary agent GitHub work:
+
+```sh
+toolbox github app-run \
+  --repo OWNER/REPO \
+  --app-id "$GITHUB_APP_ID" \
+  --private-key-file /path/to/private-key.pem \
+  -- gh pr view 123 --repo OWNER/REPO
+```
+
+If `app-auth` is unavoidable, treat the session as a debugging or integration
+boundary: disable shell tracing, never log stdout, and do not persist the token
+with `gh auth login --with-token` unless persistent local authentication is
+explicitly intended and cleaned up afterward.
 
 Print only the GitHub App JWT for debugging:
 
@@ -225,7 +209,7 @@ toolbox github app-auth --jwt-only \
 
 Do not paste JWT output into issue comments, PR comments, build logs, or chat.
 
-For structured automation output:
+For structured automation diagnostics:
 
 ```sh
 toolbox github app-auth \
@@ -235,20 +219,21 @@ toolbox github app-auth \
   --format json
 ```
 
-JSON output is diagnostic-first and never includes the installation token. Use
-the default text output when the caller needs the token.
+JSON output is diagnostic-first and never includes the installation token.
 
 ## Options To Remember
 
-- `--api-url` or `GITHUB_API_URL`: override for GitHub Enterprise Server.
+- `--api-url` or `GITHUB_API_URL`: override for GitHub Enterprise Server token
+  minting. This does not configure the child command's GitHub host; for `gh`
+  Enterprise usage, set the appropriate `GH_HOST` or pass an explicit
+  `--repo HOST/OWNER/REPO` form when needed.
 - `--repo OWNER/REPO`: scope the token to a repository. Repeat `--repo` for
   multiple repositories. Without `--installation-id`, the first `--repo` value
   is also used to discover the app installation.
 - `--installation-id`: use a known installation ID and skip repository
   installation discovery.
-- `--format json`: print structured JSON output instead of the raw token or JWT.
-- `--jwt-only`: do not call the installation token API.
 - `--permission key=value`: repeat to request narrower token permissions.
+- `--format json` and `--jwt-only` belong to `app-auth`, not `app-run`.
 
 ## Common Failure Cases
 
@@ -257,19 +242,24 @@ the default text output when the caller needs the token.
   release/download access is unrelated to GitHub App installation access.
 - Requested permissions are broader than the installation allows. Ask for equal
   or narrower permissions, or update the App installation permissions first.
-- The token expired. Mint a new token and rerun the bounded session.
+- The token expired. Rerun the `app-run` command to mint a fresh scoped token.
 - The private key path or environment variable is missing. Check
   `--private-key-file`, `--private-key-path`, `GITHUB_APP_PRIVATE_KEY_FILE`, and
   `GITHUB_APP_PRIVATE_KEY_PATH`.
+- Shell syntax was passed directly after `--`. Use `-- sh -c '...'` for pipes,
+  redirects, aliases, shell functions, and grouped commands.
 
 ## Operational Notes
 
-- Disable shell tracing (`set +x`) before command substitution.
+- Use `app-run` for ordinary agent GitHub work; do not export `GH_TOKEN`
+  manually.
+- Treat `app-auth` as a diagnostic command for app-based authentication behavior
+  unless a non-agent integration explicitly needs token stdout.
 - Scope tokens with `--repo OWNER/REPO` whenever possible.
-- Reuse one scoped token session for related `gh` commands instead of minting a
-  new token for every API call.
+- Request only the permissions needed by the child command.
 - Do not use `--private-key` in shell commands; it can leak through shell
-  history or process listings. Prefer `--private-key-file`.
+  history or process listings. Prefer `--private-key-file` or
+  `--private-key-path`.
 - Do not log stdout from `toolbox github app-auth`; it may be the token.
 - Do not persist temporary app tokens with `gh auth login` unless explicitly
   required and cleaned up afterward.
@@ -286,5 +276,5 @@ the default text output when the caller needs the token.
   maximum lifetime.
 - Public release downloads can be tested without authentication. GitHub App auth
   can only be fully tested against a repository where the App is installed.
-- Run `toolbox github app-auth --help` before changing scripts; the help output
+- Run `toolbox github app-run --help` before changing scripts; the help output
   is the command contract for agent usage.

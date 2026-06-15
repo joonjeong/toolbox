@@ -2,8 +2,14 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 use std::fs;
 #[cfg(unix)]
+use std::io::{Read, Write};
+#[cfg(unix)]
+use std::net::TcpListener;
+#[cfg(unix)]
 use std::os::unix::process::CommandExt;
 use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(unix)]
+use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -15,8 +21,10 @@ fn shows_top_level_help() {
     cmd.arg("--help").assert().success().stdout(
         predicate::str::contains("github")
             .and(predicate::str::contains("github-app-auth"))
+            .and(predicate::str::contains("github-app-run"))
             .and(predicate::str::contains("agent-skill"))
             .and(predicate::str::contains("toolbox github app-auth"))
+            .and(predicate::str::contains("toolbox github app-run"))
             .and(predicate::str::contains("github-app-auth ...")),
     );
 }
@@ -46,8 +54,10 @@ fn shows_github_app_auth_agent_usage() {
         .stdout(
             predicate::str::contains("Sign a GitHub App JWT")
                 .and(predicate::str::contains(
-                    "export GH_TOKEN=\"$(toolbox github app-auth",
+                    "debugging app-based authentication behavior",
                 ))
+                .and(predicate::str::contains("toolbox github app-run"))
+                .and(predicate::str::contains("--format json"))
                 .and(predicate::str::contains("GITHUB_APP_PRIVATE_KEY_FILE"))
                 .and(predicate::str::contains("GITHUB_APP_PRIVATE_KEY_PATH"))
                 .and(predicate::str::contains("--repo <OWNER/REPO>"))
@@ -60,7 +70,27 @@ fn shows_github_app_auth_agent_usage() {
                 .and(predicate::str::contains("--repository").not())
                 .and(predicate::str::contains("--shell").not())
                 .and(predicate::str::contains("--export-gh-token").not())
-                .and(predicate::str::contains("--include-token").not()),
+                .and(predicate::str::contains("--include-token").not())
+                .and(predicate::str::contains("export GH_TOKEN").not()),
+        );
+}
+
+#[test]
+fn shows_github_app_run_agent_usage() {
+    let mut cmd = Command::cargo_bin("toolbox").expect("binary exists");
+
+    cmd.args(["github", "app-run", "--help"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("Run a command with a GitHub App installation token")
+                .and(predicate::str::contains("toolbox github app-run"))
+                .and(predicate::str::contains("github-app-run"))
+                .and(predicate::str::contains("GH_TOKEN"))
+                .and(predicate::str::contains("GITHUB_TOKEN"))
+                .and(predicate::str::contains("-- <COMMAND>"))
+                .and(predicate::str::contains("--repo <OWNER/REPO>"))
+                .and(predicate::str::contains("only repository names are sent")),
         );
 }
 
@@ -76,6 +106,20 @@ fn symlink_style_help_does_not_duplicate_subcommand_name() {
     let stdout = String::from_utf8(output.stdout).expect("stdout is utf-8");
     assert!(stdout.contains("Usage: github-app-auth [OPTIONS]"));
     assert!(!stdout.contains("github-app-auth github-app-auth [OPTIONS]"));
+}
+
+#[cfg(unix)]
+#[test]
+fn github_app_run_symlink_style_help_does_not_duplicate_subcommand_name() {
+    let mut cmd = std::process::Command::new(assert_cmd::cargo::cargo_bin("toolbox"));
+    cmd.arg0("github-app-run");
+
+    let output = cmd.arg("--help").output().expect("command runs");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout is utf-8");
+    assert!(stdout.contains("Usage: github-app-run [OPTIONS]"));
+    assert!(!stdout.contains("github-app-run github-app-run [OPTIONS]"));
 }
 
 #[test]
@@ -149,6 +193,118 @@ fn github_app_auth_jwt_only_can_print_json() {
     .stdout(predicate::str::starts_with("{\"jwt\":\"eyJ").and(predicate::str::contains("\"}")));
 }
 
+#[cfg(unix)]
+#[test]
+fn github_app_run_runs_command_with_installation_token_environment() {
+    let (api_url, server) = one_token_response_server();
+    let mut cmd = Command::cargo_bin("toolbox").expect("binary exists");
+
+    cmd.args([
+        "github",
+        "app-run",
+        "--api-url",
+        &api_url,
+        "--",
+        "sh",
+        "-c",
+        "test \"$GH_TOKEN\" = test-token && \
+         test \"$GITHUB_TOKEN\" = test-token && \
+         test -z \"${GITHUB_APP_ID+x}\" && \
+         test -z \"${GITHUB_APP_INSTALLATION_ID+x}\" && \
+         test -z \"${GITHUB_APP_PRIVATE_KEY+x}\" && \
+         test \"$1\" = --body && \
+         test \"$2\" = Done",
+        "child-command",
+        "--body",
+        "Done",
+    ])
+    .env("GITHUB_APP_ID", "1")
+    .env("GITHUB_APP_INSTALLATION_ID", "42")
+    .env("GITHUB_APP_PRIVATE_KEY", TEST_RSA_PRIVATE_KEY)
+    .assert()
+    .success();
+
+    let request = server.join().expect("server thread completed");
+    assert!(request.starts_with("post /app/installations/42/access_tokens "));
+    assert!(request.contains("authorization: bearer "));
+}
+
+#[cfg(unix)]
+#[test]
+fn github_app_run_exits_with_child_exit_code() {
+    let (api_url, server) = one_token_response_server();
+    let mut cmd = Command::cargo_bin("toolbox").expect("binary exists");
+
+    cmd.args([
+        "github",
+        "app-run",
+        "--app-id",
+        "1",
+        "--installation-id",
+        "42",
+        "--api-url",
+        &api_url,
+        "--private-key",
+        TEST_RSA_PRIVATE_KEY,
+        "--",
+        "sh",
+        "-c",
+        "exit 42",
+    ])
+    .assert()
+    .code(42);
+
+    let request = server.join().expect("server thread completed");
+    assert!(request.starts_with("post /app/installations/42/access_tokens "));
+}
+
+#[test]
+fn github_app_run_requires_command_after_separator() {
+    let mut cmd = Command::cargo_bin("toolbox").expect("binary exists");
+
+    cmd.args([
+        "github",
+        "app-run",
+        "--app-id",
+        "1",
+        "--repo",
+        "OWNER/REPO",
+        "--private-key",
+        TEST_RSA_PRIVATE_KEY,
+    ])
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains("<COMMAND>"));
+}
+
+#[test]
+fn github_app_run_accepts_command_options_after_separator() {
+    let mut cmd = Command::cargo_bin("toolbox").expect("binary exists");
+
+    cmd.args([
+        "github",
+        "app-run",
+        "--app-id",
+        "1",
+        "--repo",
+        "OWNER/REPO",
+        "--private-key",
+        "not-a-key",
+        "--",
+        "gh",
+        "pr",
+        "comment",
+        "123",
+        "--body",
+        "Done",
+    ])
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains(
+        "private key must be an RSA PEM key",
+    ));
+}
+
 #[test]
 fn creates_github_app_agent_workflow_skill() {
     let skills_dir = unique_temp_dir("toolbox-skill-test");
@@ -169,7 +325,9 @@ fn creates_github_app_agent_workflow_skill() {
         .join("SKILL.md");
     let skill = fs::read_to_string(&skill_file).expect("skill file exists");
     assert!(skill.contains("name: github-app-agent-workflow"));
-    assert!(skill.contains("toolbox github app-auth"));
+    assert!(skill.contains("toolbox github app-run"));
+    assert!(skill.contains("without printing the token or exporting it"));
+    assert!(skill.contains("primarily for debugging GitHub App authentication behavior"));
 
     fs::remove_dir_all(skills_dir).expect("temporary skill directory removed");
 }
@@ -246,4 +404,28 @@ fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
         "{prefix}-{}-{unique}-{counter}",
         std::process::id()
     ))
+}
+
+#[cfg(unix)]
+fn one_token_response_server() -> (String, thread::JoinHandle<String>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("test server binds");
+    let address = listener.local_addr().expect("test server address");
+    let handle = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("test server accepts");
+        let mut buffer = [0; 8192];
+        let bytes = stream.read(&mut buffer).expect("test server reads request");
+        let request = String::from_utf8_lossy(&buffer[..bytes]).to_ascii_lowercase();
+        let body = r#"{"token":"test-token","expires_at":"2026-06-15T00:00:00Z","repository_selection":"selected","repositories":[],"permissions":{}}"#;
+        let response = format!(
+            "HTTP/1.1 201 Created\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        stream
+            .write_all(response.as_bytes())
+            .expect("test server writes response");
+        request
+    });
+
+    (format!("http://{address}"), handle)
 }
