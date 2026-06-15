@@ -121,6 +121,23 @@ while they remain valid. A cached token is reused only after its expiration is
 checked and GitHub accepts it for the installation; expired or rejected cache
 entries are replaced by a newly minted token.
 
+Git does not automatically use `GH_TOKEN` or `GITHUB_TOKEN` for HTTPS remotes.
+Pass `--git-credentials` when the child command needs Git HTTPS authentication:
+
+```sh
+toolbox github app-run \
+  --app-id "$GITHUB_APP_ID" \
+  --repo OWNER/REPO \
+  --permission contents=read \
+  --private-key-file /path/to/private-key.pem \
+  --git-credentials \
+  -- git ls-remote --heads https://github.com/OWNER/REPO.git
+```
+
+This installs a temporary child-only Git credential helper, disables interactive
+Git credential prompts for the child, and answers only HTTPS credential requests
+for the GitHub host.
+
 ## Agent skill
 
 The `toolbox` binary bundles a `github-app-agent-workflow` skill. It describes

@@ -5,7 +5,7 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Context, Result};
 use base64::Engine;
@@ -13,6 +13,7 @@ use clap::{Args, ValueEnum};
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use time::format_description::well_known::Rfc3339;
@@ -183,7 +184,10 @@ Repository scoping:
   Use --repo OWNER/REPO to scope the token to one or more repositories. Repeat --repo for multiple repositories. When --installation-id is omitted, the first --repo value is also used to discover the installation. OWNER/REPO is accepted for user-facing clarity; only repository names are sent to GitHub's installation token API.
 
 Execution:
-  The command after -- is run directly with GH_TOKEN and GITHUB_TOKEN set to the temporary installation token. GitHub App credential environment variables are removed from the child environment. The child process inherits stdin, stdout, stderr, working directory, PATH, and other ordinary environment variables. Shell syntax such as pipes, redirects, aliases, and shell functions requires an explicit shell command, for example -- sh -c 'gh issue view 123 | jq .url'."
+  The command after -- is run directly with GH_TOKEN and GITHUB_TOKEN set to the temporary installation token. GitHub App credential environment variables are removed from the child environment. The child process inherits stdin, stdout, stderr, working directory, PATH, and other ordinary environment variables. Shell syntax such as pipes, redirects, aliases, and shell functions requires an explicit shell command, for example -- sh -c 'gh issue view 123 | jq .url'.
+
+Git HTTPS authentication:
+  Git does not automatically use GH_TOKEN or GITHUB_TOKEN as HTTPS credentials. Pass --git-credentials to install a child-only Git credential helper that answers HTTPS credential requests for the GitHub host with username x-access-token and the temporary installation token."
 )]
 pub struct AppRunArgs {
     /// GitHub App ID.
@@ -260,6 +264,14 @@ pub struct AppRunArgs {
     /// sent unchanged to GitHub's installation token API.
     #[arg(long = "permission", value_name = "KEY=VALUE")]
     permissions: Vec<PermissionArg>,
+
+    /// Configure a child-only Git credential helper for HTTPS GitHub remotes.
+    ///
+    /// The helper responds only for the GitHub host derived from --api-url and
+    /// reads the temporary installation token from GITHUB_TOKEN in the child
+    /// environment.
+    #[arg(long)]
+    git_credentials: bool,
 
     /// Command to run with GH_TOKEN and GITHUB_TOKEN set.
     #[arg(
@@ -474,7 +486,7 @@ pub fn app_auth(args: AppAuthArgs) -> Result<()> {
 
 pub fn app_run(args: AppRunArgs) -> Result<()> {
     let token = cached_or_fresh_installation_token(&args)?.token;
-    run_with_installation_token(&args.command, &token)
+    run_with_installation_token(&args.command, &token, args.git_credentials, &args.api_url)
 }
 
 pub fn create_app_agent_workflow_skill(args: AppAgentWorkflowSkillArgs) -> Result<()> {
@@ -863,11 +875,24 @@ fn print_jwt(args: &AppAuthArgs, jwt: &str) -> Result<()> {
     Ok(())
 }
 
-fn run_with_installation_token(command: &[OsString], token: &str) -> Result<()> {
+fn run_with_installation_token(
+    command: &[OsString],
+    token: &str,
+    git_credentials: bool,
+    api_url: &str,
+) -> Result<()> {
     let (program, args) = command
         .split_first()
         .ok_or_else(|| anyhow!("missing command after --"))?;
-    let status = Command::new(program)
+
+    let git_credential_environment = if git_credentials {
+        Some(GitCredentialEnvironment::create(api_url)?)
+    } else {
+        None
+    };
+
+    let mut child = Command::new(program);
+    child
         .args(args)
         .env_remove("GITHUB_APP_ID")
         .env_remove("GITHUB_APP_INSTALLATION_ID")
@@ -876,9 +901,16 @@ fn run_with_installation_token(command: &[OsString], token: &str) -> Result<()> 
         .env_remove("GITHUB_APP_PRIVATE_KEY_PATH")
         .env_remove("GITHUB_API_URL")
         .env("GH_TOKEN", token)
-        .env("GITHUB_TOKEN", token)
+        .env("GITHUB_TOKEN", token);
+
+    if let Some(environment) = &git_credential_environment {
+        environment.configure_child(&mut child);
+    }
+
+    let status = child
         .status()
         .with_context(|| format!("failed to run {}", program.to_string_lossy()))?;
+    drop(git_credential_environment);
 
     if status.success() {
         return Ok(());
@@ -897,6 +929,125 @@ fn run_with_installation_token(command: &[OsString], token: &str) -> Result<()> 
     }
 
     Err(anyhow!("command terminated before exiting"))
+}
+
+struct GitCredentialEnvironment {
+    temp_dir: PathBuf,
+    helper_path: PathBuf,
+}
+
+impl GitCredentialEnvironment {
+    fn create(api_url: &str) -> Result<Self> {
+        let host = git_credential_host(api_url)?;
+        let temp_dir = unique_temp_dir("toolbox-git-credentials");
+        let mut builder = fs::DirBuilder::new();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            builder.mode(0o700);
+        }
+        builder
+            .create(&temp_dir)
+            .with_context(|| format!("failed to create {}", temp_dir.display()))?;
+
+        let helper_path = temp_dir.join("git-credential-toolbox");
+        fs::write(&helper_path, git_credential_helper_script(&host))
+            .with_context(|| format!("failed to write {}", helper_path.display()))?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&helper_path, fs::Permissions::from_mode(0o700))
+                .with_context(|| format!("failed to make {} executable", helper_path.display()))?;
+        }
+
+        Ok(Self {
+            temp_dir,
+            helper_path,
+        })
+    }
+
+    fn configure_child(&self, child: &mut Command) {
+        let config_index = std::env::var("GIT_CONFIG_COUNT")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(0);
+
+        child
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .env("GIT_CONFIG_COUNT", (config_index + 2).to_string())
+            .env(
+                format!("GIT_CONFIG_KEY_{config_index}"),
+                "credential.helper",
+            )
+            .env(format!("GIT_CONFIG_VALUE_{config_index}"), "")
+            .env(
+                format!("GIT_CONFIG_KEY_{}", config_index + 1),
+                "credential.helper",
+            )
+            .env(
+                format!("GIT_CONFIG_VALUE_{}", config_index + 1),
+                &self.helper_path,
+            );
+    }
+}
+
+impl Drop for GitCredentialEnvironment {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.temp_dir);
+    }
+}
+
+fn unique_temp_dir(prefix: &str) -> PathBuf {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    std::env::temp_dir().join(format!("{prefix}-{}-{unique}", std::process::id()))
+}
+
+fn git_credential_host(api_url: &str) -> Result<String> {
+    let url = Url::parse(api_url).with_context(|| format!("invalid GitHub API URL: {api_url}"))?;
+    let host = url
+        .host_str()
+        .ok_or_else(|| anyhow!("GitHub API URL must include a host"))?;
+
+    if host.eq_ignore_ascii_case("api.github.com") {
+        Ok("github.com".to_string())
+    } else {
+        Ok(host.to_ascii_lowercase())
+    }
+}
+
+fn git_credential_helper_script(host: &str) -> String {
+    format!(
+        r#"#!/bin/sh
+test "$1" = get || exit 0
+
+protocol=
+host=
+while IFS= read -r line; do
+    test -n "$line" || break
+    case "$line" in
+        protocol=*) protocol=${{line#protocol=}} ;;
+        host=*) host=${{line#host=}} ;;
+    esac
+done
+
+test "$protocol" = https || exit 0
+host_no_port=${{host%%:*}}
+test "$host_no_port" = {quoted_host} || exit 0
+test -n "$GITHUB_TOKEN" || exit 0
+
+printf '%s\n' username=x-access-token
+printf '%s\n' "password=$GITHUB_TOKEN"
+"#,
+        quoted_host = shell_single_quote(host)
+    )
+}
+
+fn shell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', r#"'\''"#))
 }
 
 fn token_repository_names(args: &impl AppTokenConfig) -> Vec<String> {
@@ -962,8 +1113,8 @@ impl std::str::FromStr for PermissionArg {
 #[cfg(test)]
 mod tests {
     use super::{
-        json_repository_names, permissions_map, repository_names, token_cache_key, AppAuthArgs,
-        OutputFormat, PermissionArg, TokenRepository, TokenResponse,
+        git_credential_host, json_repository_names, permissions_map, repository_names,
+        token_cache_key, AppAuthArgs, OutputFormat, PermissionArg, TokenRepository, TokenResponse,
     };
     use std::collections::BTreeMap;
     use std::path::PathBuf;
@@ -994,6 +1145,18 @@ mod tests {
         assert_eq!(
             mapped.get("pull_requests").map(String::as_str),
             Some("write")
+        );
+    }
+
+    #[test]
+    fn maps_github_api_host_to_git_credential_host() {
+        assert_eq!(
+            git_credential_host("https://api.github.com").expect("host parses"),
+            "github.com"
+        );
+        assert_eq!(
+            git_credential_host("https://ghe.example.com/api/v3").expect("host parses"),
+            "ghe.example.com"
         );
     }
 
