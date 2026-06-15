@@ -28,9 +28,9 @@ const TOKEN_CACHE_EXPIRY_GRACE_SECONDS: i64 = 60;
     about = "Authenticate as a GitHub App installation",
     long_about = "Sign a GitHub App JWT, exchange it for an installation access token, and print the token to stdout.
 
-Use this command from coding agents or automation that need temporary GitHub repository access through a GitHub App installation. Provide the app ID, --repo OWNER/REPO, and exactly one private key source: --private-key-file or --private-key. Values can also come from the documented environment variables.",
+Use this command to debug app-based authentication behavior or to support integrations that explicitly need token stdout. For ordinary agent GitHub work, prefer toolbox github app-run. Provide the app ID, --repo OWNER/REPO, and exactly one private key source: --private-key-file or --private-key. Values can also come from the documented environment variables.",
     after_long_help = "Purpose:
-  Sign a GitHub App JWT, exchange it for an installation access token, and print the token to stdout. Use this from coding agents or automation that need temporary GitHub repository access through a GitHub App installation.
+  Sign a GitHub App JWT, exchange it for an installation access token, and print the token to stdout. This is primarily for debugging app-based authentication behavior or integrations that explicitly need token stdout. For ordinary agent GitHub work, prefer toolbox github app-run.
 
 Invocation forms:
   toolbox github app-auth [OPTIONS]
@@ -41,12 +41,8 @@ Examples:
   toolbox github app-auth \\
     --app-id \"$GITHUB_APP_ID\" \\
     --repo OWNER/REPO \\
-    --private-key-file /path/to/private-key.pem
-
-  export GH_TOKEN=\"$(toolbox github app-auth \\
-    --repo OWNER/REPO \\
-    --app-id \"$GITHUB_APP_ID\" \\
-    --private-key-file /path/to/private-key.pem)\"
+    --private-key-file /path/to/private-key.pem \\
+    --format json
 
   toolbox github-app-auth --jwt-only \\
     --app-id \"$GITHUB_APP_ID\" \\
@@ -61,7 +57,7 @@ Environment:
   GITHUB_API_URL
 
 Output:
-  By default, prints only the installation token. Use shell-native command substitution, for example export GH_TOKEN=\"$(toolbox github app-auth ...)\", when a caller needs an environment variable. With --format json, prints structured diagnostic JSON without the token. With --jwt-only, prints the signed GitHub App JWT and does not call the installation token API.
+  By default, prints only the installation token. Treat that mode as an integration escape hatch with a secret-safe destination, not the ordinary agent workflow. With --format json, prints structured diagnostic JSON without the token. With --jwt-only, prints the signed GitHub App JWT and does not call the installation token API. Use toolbox github app-run for normal gh commands.
 
 Repository scoping:
   Use --repo OWNER/REPO to scope the token to one or more repositories. Repeat --repo for multiple repositories. When --installation-id is omitted, the first --repo value is also used to discover the installation. OWNER/REPO is accepted for user-facing clarity; only repository names are sent to GitHub's installation token API."
@@ -890,6 +886,14 @@ fn run_with_installation_token(command: &[OsString], token: &str) -> Result<()> 
 
     if let Some(code) = status.code() {
         std::process::exit(code);
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(signal) = status.signal() {
+            std::process::exit(128 + signal);
+        }
     }
 
     Err(anyhow!("command terminated before exiting"))
