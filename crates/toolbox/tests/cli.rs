@@ -322,7 +322,8 @@ fn creates_github_app_agent_workflow_skill() {
         .join("SKILL.md");
     let skill = fs::read_to_string(&skill_file).expect("skill file exists");
     assert!(skill.contains("name: github-app-agent-workflow"));
-    assert!(skill.contains("toolbox github app-auth"));
+    assert!(skill.contains("toolbox github app-run"));
+    assert!(skill.contains("without printing the token or exporting it"));
 
     fs::remove_dir_all(skills_dir).expect("temporary skill directory removed");
 }

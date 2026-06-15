@@ -103,8 +103,8 @@ automation.
 ## Agent skill
 
 The `toolbox` binary bundles a `github-app-agent-workflow` skill. It describes
-how an agent can use `toolbox github app-auth` with `gh` without exposing or
-persisting temporary GitHub App installation tokens.
+how an agent can use `toolbox github app-run` with `gh` without printing,
+exporting, or persisting temporary GitHub App installation tokens.
 
 Create the bundled skill in another agent's skills directory:
 
