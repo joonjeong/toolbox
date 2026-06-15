@@ -87,6 +87,35 @@ Public release downloads can be tested without authentication. GitHub App auth
 must be tested against a repository where the App is installed, even if the
 repository itself is public.
 
+`github app-run` uses the same token minting inputs as `app-auth`, but runs a
+command with the temporary installation token set as both `GH_TOKEN` and
+`GITHUB_TOKEN`:
+
+```sh
+toolbox github app-run \
+  --app-id "$GITHUB_APP_ID" \
+  --repo OWNER/REPO \
+  --private-key-file /path/to/private-key.pem \
+  -- gh pr comment 123 --body "Done"
+```
+
+The command after `--` inherits stdin, stdout, stderr, the current working
+directory, `PATH`, and ordinary environment variables. GitHub App credential
+environment variables are removed from the child environment, so the child only
+receives the scoped installation token. Shell syntax such as pipes, redirects,
+aliases, and shell functions requires an explicit shell command:
+
+```sh
+toolbox github app-run \
+  --app-id "$GITHUB_APP_ID" \
+  --repo OWNER/REPO \
+  --private-key-file /path/to/private-key.pem \
+  -- sh -c 'gh issue view 123 | jq .url'
+```
+
+`toolbox` exits with the child process exit code, so it can be used directly in
+automation.
+
 ## Agent skill
 
 The `toolbox` binary bundles a `github-app-agent-workflow` skill. It describes
@@ -105,8 +134,10 @@ Use `--force` to overwrite an existing copy.
 ## Releases
 
 The release workflow creates HeadVer-tagged GitHub releases and uploads
-`toolbox` binaries for `x86_64-unknown-linux-gnu`,
-`aarch64-unknown-linux-gnu`, and `aarch64-apple-darwin`.
+`toolbox` binaries for `x86_64-unknown-linux-musl`,
+`aarch64-unknown-linux-musl`, and `aarch64-apple-darwin`. Linux assets are
+statically linked musl binaries so they do not depend on the host system's
+glibc version.
 
 The weekly release workflow runs every Sunday at 10:00 KST and creates a
 [HeadVer](https://github.com/line/headver) release from the default branch. Until
