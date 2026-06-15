@@ -940,15 +940,15 @@ impl GitCredentialEnvironment {
     fn create(api_url: &str) -> Result<Self> {
         let host = git_credential_host(api_url)?;
         let temp_dir = unique_temp_dir("toolbox-git-credentials");
-        fs::create_dir(&temp_dir)
-            .with_context(|| format!("failed to create {}", temp_dir.display()))?;
-
+        let mut builder = fs::DirBuilder::new();
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&temp_dir, fs::Permissions::from_mode(0o700))
-                .with_context(|| format!("failed to secure {}", temp_dir.display()))?;
+            use std::os::unix::fs::DirBuilderExt;
+            builder.mode(0o700);
         }
+        builder
+            .create(&temp_dir)
+            .with_context(|| format!("failed to create {}", temp_dir.display()))?;
 
         let helper_path = temp_dir.join("git-credential-toolbox");
         fs::write(&helper_path, git_credential_helper_script(&host))
@@ -975,13 +975,18 @@ impl GitCredentialEnvironment {
 
         child
             .env("GIT_TERMINAL_PROMPT", "0")
-            .env("GIT_CONFIG_COUNT", (config_index + 1).to_string())
+            .env("GIT_CONFIG_COUNT", (config_index + 2).to_string())
             .env(
                 format!("GIT_CONFIG_KEY_{config_index}"),
                 "credential.helper",
             )
+            .env(format!("GIT_CONFIG_VALUE_{config_index}"), "")
             .env(
-                format!("GIT_CONFIG_VALUE_{config_index}"),
+                format!("GIT_CONFIG_KEY_{}", config_index + 1),
+                "credential.helper",
+            )
+            .env(
+                format!("GIT_CONFIG_VALUE_{}", config_index + 1),
                 &self.helper_path,
             );
     }
@@ -1030,7 +1035,8 @@ while IFS= read -r line; do
 done
 
 test "$protocol" = https || exit 0
-test "$host" = {quoted_host} || exit 0
+host_no_port=${{host%%:*}}
+test "$host_no_port" = {quoted_host} || exit 0
 test -n "$GITHUB_TOKEN" || exit 0
 
 printf '%s\n' username=x-access-token

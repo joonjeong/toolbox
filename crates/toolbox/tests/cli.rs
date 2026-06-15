@@ -249,13 +249,18 @@ fn github_app_run_can_configure_child_only_git_credentials() {
         "sh",
         "-c",
         "test \"$GIT_TERMINAL_PROMPT\" = 0 && \
-         test \"$GIT_CONFIG_COUNT\" = 1 && \
+         test \"$GIT_CONFIG_COUNT\" = 2 && \
          test \"$GIT_CONFIG_KEY_0\" = credential.helper && \
-         helper=$GIT_CONFIG_VALUE_0 && \
+         test \"$GIT_CONFIG_VALUE_0\" = \"\" && \
+         test \"$GIT_CONFIG_KEY_1\" = credential.helper && \
+         helper=$GIT_CONFIG_VALUE_1 && \
          api_host=${2#http://} && \
          api_host=${api_host%%:*} && \
          printf 'protocol=https\\nhost=%s\\n\\n' \"$api_host\" | \
            GIT_CONFIG_SYSTEM=/dev/null GIT_CONFIG_GLOBAL=/dev/null git credential fill > \"$1\" && \
+         grep -qx username=x-access-token \"$1\" && \
+         grep -qx password=test-token \"$1\" && \
+         printf 'protocol=https\\nhost=%s:8443\\n\\n' \"$api_host\" | \"$helper\" get > \"$1\" && \
          grep -qx username=x-access-token \"$1\" && \
          grep -qx password=test-token \"$1\" && \
          test -z \"$(printf 'protocol=https\\nhost=example.com\\n\\n' | \"$helper\" get)\" && \
@@ -270,6 +275,8 @@ fn github_app_run_can_configure_child_only_git_credentials() {
     .env_remove("GIT_CONFIG_COUNT")
     .env_remove("GIT_CONFIG_KEY_0")
     .env_remove("GIT_CONFIG_VALUE_0")
+    .env_remove("GIT_CONFIG_KEY_1")
+    .env_remove("GIT_CONFIG_VALUE_1")
     .assert()
     .success();
 
