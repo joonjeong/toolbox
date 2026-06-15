@@ -123,8 +123,10 @@ Use `--force` to overwrite an existing copy.
 ## Releases
 
 The release workflow creates HeadVer-tagged GitHub releases and uploads
-`toolbox` binaries for `x86_64-unknown-linux-gnu`,
-`aarch64-unknown-linux-gnu`, and `aarch64-apple-darwin`.
+`toolbox` binaries for `x86_64-unknown-linux-musl`,
+`aarch64-unknown-linux-musl`, and `aarch64-apple-darwin`. Linux assets are
+statically linked musl binaries so they do not depend on the host system's
+glibc version.
 
 The weekly release workflow runs every Sunday at 10:00 KST and creates a
 [HeadVer](https://github.com/line/headver) release from the default branch. Until

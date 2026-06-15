@@ -79,53 +79,37 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            asset: toolbox-x86_64-unknown-linux-gnu
-            apt_packages: ""
-            linker: ""
+            target: x86_64-unknown-linux-musl
+            asset: toolbox-x86_64-unknown-linux-musl
+            build_tool: cargo-zigbuild
           - os: ubuntu-latest
-            target: aarch64-unknown-linux-gnu
-            asset: toolbox-aarch64-unknown-linux-gnu
-            apt_packages: gcc-aarch64-linux-gnu
-            linker: aarch64-linux-gnu-gcc
+            target: aarch64-unknown-linux-musl
+            asset: toolbox-aarch64-unknown-linux-musl
+            build_tool: cargo-zigbuild
           - os: macos-14
             target: aarch64-apple-darwin
             asset: toolbox-aarch64-apple-darwin
-            apt_packages: ""
-            linker: ""
-    runs-on: ${{ matrix.os }}
+            build_tool: cargo
+    uses: ./.github/workflows/build.yml
+    with:
+      os: ${{ matrix.os }}
+      target: ${{ matrix.target }}
+      build_tool: ${{ matrix.build_tool }}
+      toolbox_version: ${{ needs.prepare.outputs.release_version }}
+      ref: ${{ needs.prepare.outputs.target_sha }}
+      artifact_name: ${{ matrix.asset }}-${{ needs.prepare.outputs.asset_suffix }}
+      upload_artifact: true
+
+  upload:
+    name: Upload release assets
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Download release assets
+        uses: actions/download-artifact@v4
         with:
-          ref: ${{ needs.prepare.outputs.target_sha }}
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Install Linux cross linker
-        if: ${{ matrix.apt_packages != '' }}
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ${{ matrix.apt_packages }}
-
-      - name: Build
-        env:
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.linker }}
-          TOOLBOX_VERSION: ${{ needs.prepare.outputs.release_version }}
-        run: cargo build --release --target ${{ matrix.target }} --bin toolbox
-
-      - name: Package
-        shell: bash
-        env:
-          ASSET_NAME: ${{ matrix.asset }}-${{ needs.prepare.outputs.asset_suffix }}
-        run: |
-          mkdir -p dist
-          cp "target/${{ matrix.target }}/release/toolbox" "dist/${ASSET_NAME}"
-          chmod +x "dist/${ASSET_NAME}"
-          shasum -a 256 "dist/${ASSET_NAME}" > "dist/${ASSET_NAME}.sha256"
+          path: dist
+          merge-multiple: true
 
       - name: Upload release assets
         env:
