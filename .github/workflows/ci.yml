@@ -29,7 +29,6 @@ jobs:
 
   release-targets:
     name: Build ${{ matrix.target }}
-    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -43,13 +42,9 @@ jobs:
           - os: macos-14
             target: aarch64-apple-darwin
             build_tool: cargo
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Build release target
-        uses: ./.github/actions/build-toolbox
-        with:
-          target: ${{ matrix.target }}
-          build-tool: ${{ matrix.build_tool }}
-          toolbox-version: ci
+    uses: ./.github/workflows/build.yml
+    with:
+      os: ${{ matrix.os }}
+      target: ${{ matrix.target }}
+      build_tool: ${{ matrix.build_tool }}
+      toolbox_version: ci

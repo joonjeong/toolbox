@@ -90,29 +90,26 @@ jobs:
             target: aarch64-apple-darwin
             asset: toolbox-aarch64-apple-darwin
             build_tool: cargo
-    runs-on: ${{ matrix.os }}
+    uses: ./.github/workflows/build.yml
+    with:
+      os: ${{ matrix.os }}
+      target: ${{ matrix.target }}
+      build_tool: ${{ matrix.build_tool }}
+      toolbox_version: ${{ needs.prepare.outputs.release_version }}
+      ref: ${{ needs.prepare.outputs.target_sha }}
+      artifact_name: ${{ matrix.asset }}-${{ needs.prepare.outputs.asset_suffix }}
+      upload_artifact: true
+
+  upload:
+    name: Upload release assets
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Download release assets
+        uses: actions/download-artifact@v4
         with:
-          ref: ${{ needs.prepare.outputs.target_sha }}
-
-      - name: Build
-        uses: ./.github/actions/build-toolbox
-        with:
-          target: ${{ matrix.target }}
-          build-tool: ${{ matrix.build_tool }}
-          toolbox-version: ${{ needs.prepare.outputs.release_version }}
-
-      - name: Package
-        shell: bash
-        env:
-          ASSET_NAME: ${{ matrix.asset }}-${{ needs.prepare.outputs.asset_suffix }}
-        run: |
-          mkdir -p dist
-          cp "target/${{ matrix.target }}/release/toolbox" "dist/${ASSET_NAME}"
-          chmod +x "dist/${ASSET_NAME}"
-          shasum -a 256 "dist/${ASSET_NAME}" > "dist/${ASSET_NAME}.sha256"
+          path: dist
+          merge-multiple: true
 
       - name: Upload release assets
         env:
