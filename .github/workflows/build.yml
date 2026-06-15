@@ -1,0 +1,96 @@
+name: Build
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        description: "GitHub Actions runner image."
+        required: true
+        type: string
+      target:
+        description: "Rust target triple to build."
+        required: true
+        type: string
+      build_tool:
+        description: "Build command driver, either cargo or cargo-zigbuild."
+        required: true
+        type: string
+      toolbox_version:
+        description: "TOOLBOX_VERSION value embedded by the build script."
+        required: true
+        type: string
+      ref:
+        description: "Optional Git ref or SHA to check out."
+        required: false
+        default: ""
+        type: string
+      artifact_name:
+        description: "Optional artifact and release asset base name."
+        required: false
+        default: ""
+        type: string
+      upload_artifact:
+        description: "Whether to package and upload the built binary as a workflow artifact."
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  build:
+    name: Build ${{ inputs.target }}
+    runs-on: ${{ inputs.os }}
+    steps:
+      - name: Checkout
+        if: ${{ inputs.ref == '' }}
+        uses: actions/checkout@v4
+
+      - name: Checkout ref
+        if: ${{ inputs.ref != '' }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ inputs.target }}
+
+      - name: Install Zig
+        if: ${{ inputs.build_tool == 'cargo-zigbuild' }}
+        uses: mlugg/setup-zig@v2
+
+      - name: Install cargo-zigbuild
+        if: ${{ inputs.build_tool == 'cargo-zigbuild' }}
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+
+      - name: Build
+        env:
+          BUILD_TOOL: ${{ inputs.build_tool }}
+          TOOLBOX_VERSION: ${{ inputs.toolbox_version }}
+        run: |
+          if [[ "${BUILD_TOOL}" == "cargo-zigbuild" ]]; then
+            cargo zigbuild --release --target ${{ inputs.target }} --bin toolbox
+          else
+            cargo build --release --target ${{ inputs.target }} --bin toolbox
+          fi
+
+      - name: Package artifact
+        if: ${{ inputs.upload_artifact }}
+        shell: bash
+        env:
+          ARTIFACT_NAME: ${{ inputs.artifact_name }}
+        run: |
+          mkdir -p dist
+          cp "target/${{ inputs.target }}/release/toolbox" "dist/${ARTIFACT_NAME}"
+          chmod +x "dist/${ARTIFACT_NAME}"
+          shasum -a 256 "dist/${ARTIFACT_NAME}" > "dist/${ARTIFACT_NAME}.sha256"
+
+      - name: Upload artifact
+        if: ${{ inputs.upload_artifact }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: dist/*
+          if-no-files-found: error
