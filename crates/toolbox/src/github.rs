@@ -1,21 +1,27 @@
 use std::collections::BTreeMap;
+use std::env;
 use std::ffi::OsString;
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
+use base64::Engine;
 use clap::{Args, ValueEnum};
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
 const APP_AGENT_WORKFLOW_SKILL_NAME: &str = "github-app-agent-workflow";
 const APP_AGENT_WORKFLOW_SKILL: &str =
     include_str!("../resources/github-app-agent-workflow/SKILL.md");
+const TOKEN_CACHE_EXPIRY_GRACE_SECONDS: i64 = 60;
 
 #[derive(Debug, Args)]
 #[command(
@@ -316,6 +322,21 @@ struct TokenRequest {
     permissions: BTreeMap<String, String>,
 }
 
+#[derive(Debug, Serialize)]
+struct TokenCacheKey {
+    app_id: u64,
+    installation_id: Option<u64>,
+    api_url: String,
+    repositories: Vec<String>,
+    permissions: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct CachedToken {
+    token: String,
+    expires_at: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 struct TokenResponse {
     token: String,
@@ -456,7 +477,7 @@ pub fn app_auth(args: AppAuthArgs) -> Result<()> {
 }
 
 pub fn app_run(args: AppRunArgs) -> Result<()> {
-    let token = installation_token(&args)?.token;
+    let token = cached_or_fresh_installation_token(&args)?.token;
     run_with_installation_token(&args.command, &token)
 }
 
@@ -522,6 +543,144 @@ fn installation_token(args: &impl AppTokenConfig) -> Result<TokenResponse> {
     let client = github_client(&jwt)?;
     let installation_id = resolve_installation_id(args, &client)?;
     create_installation_token(args, &client, installation_id)
+}
+
+fn cached_or_fresh_installation_token(args: &impl AppTokenConfig) -> Result<TokenResponse> {
+    let cache_key = token_cache_key(args);
+    let cache_path = token_cache_path(&cache_key)?;
+
+    if let Some(cached) = read_cached_token(&cache_path)? {
+        if cached_token_is_fresh(&cached)
+            && validate_cached_token(args.api_url(), &cached.token).is_ok()
+        {
+            return Ok(TokenResponse {
+                token: cached.token,
+                expires_at: cached.expires_at,
+                repository_selection: None,
+                repositories: Vec::new(),
+                permissions: BTreeMap::new(),
+            });
+        }
+    }
+
+    let response = installation_token(args)?;
+    write_cached_token(&cache_path, &response)?;
+    Ok(response)
+}
+
+fn token_cache_key(args: &impl AppTokenConfig) -> TokenCacheKey {
+    TokenCacheKey {
+        app_id: args.app_id(),
+        installation_id: args.installation_id(),
+        api_url: args.api_url().trim_end_matches('/').to_string(),
+        repositories: args.repos().to_vec(),
+        permissions: permissions_map(args.permissions()),
+    }
+}
+
+fn token_cache_path(cache_key: &TokenCacheKey) -> Result<PathBuf> {
+    let encoded = serde_json::to_vec(cache_key).context("failed to serialize token cache key")?;
+    let digest = Sha256::digest(encoded);
+    let file_name = format!(
+        "{}.json",
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest)
+    );
+    Ok(token_cache_dir()?.join(file_name))
+}
+
+fn token_cache_dir() -> Result<PathBuf> {
+    if let Some(cache_home) = env::var_os("XDG_CACHE_HOME") {
+        return Ok(PathBuf::from(cache_home)
+            .join("toolbox")
+            .join("github-app-run"));
+    }
+
+    if let Some(home) = env::var_os("HOME") {
+        return Ok(PathBuf::from(home)
+            .join(".cache")
+            .join("toolbox")
+            .join("github-app-run"));
+    }
+
+    Err(anyhow!(
+        "cannot determine token cache directory; set XDG_CACHE_HOME or HOME"
+    ))
+}
+
+fn read_cached_token(path: &PathBuf) -> Result<Option<CachedToken>> {
+    match fs::read_to_string(path) {
+        Ok(contents) => {
+            let token = serde_json::from_str(&contents).ok();
+            Ok(token)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => {
+            Err(error).with_context(|| format!("failed to read token cache {}", path.display()))
+        }
+    }
+}
+
+fn write_cached_token(path: &PathBuf, response: &TokenResponse) -> Result<()> {
+    let Some(parent) = path.parent() else {
+        return Err(anyhow!("token cache path has no parent directory"));
+    };
+    fs::create_dir_all(parent).with_context(|| {
+        format!(
+            "failed to create token cache directory {}",
+            parent.display()
+        )
+    })?;
+
+    let contents = serde_json::to_vec(&CachedToken {
+        token: response.token.clone(),
+        expires_at: response.expires_at.clone(),
+    })
+    .context("failed to serialize token cache")?;
+
+    let mut options = OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+
+    let mut file = options
+        .open(path)
+        .with_context(|| format!("failed to write token cache {}", path.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("failed to set token cache permissions {}", path.display()))?;
+    }
+    file.write_all(&contents)
+        .with_context(|| format!("failed to write token cache {}", path.display()))?;
+    Ok(())
+}
+
+fn cached_token_is_fresh(cached: &CachedToken) -> bool {
+    let Some(expires_at) = cached.expires_at.as_deref() else {
+        return false;
+    };
+    let Ok(expires_at) = OffsetDateTime::parse(expires_at, &Rfc3339) else {
+        return false;
+    };
+    let refresh_after = expires_at - time::Duration::seconds(TOKEN_CACHE_EXPIRY_GRACE_SECONDS);
+    OffsetDateTime::now_utc() < refresh_after
+}
+
+fn validate_cached_token(api_url: &str, token: &str) -> Result<()> {
+    let client = installation_token_client(token)?;
+    let url = format!(
+        "{}/installation/repositories",
+        api_url.trim_end_matches('/')
+    );
+    send_github_request(
+        client.get(url),
+        "GitHub cached installation token validation",
+    )?;
+    Ok(())
 }
 
 fn resolve_installation_id(args: &impl AppTokenConfig, client: &Client) -> Result<u64> {
@@ -601,6 +760,14 @@ fn github_client(jwt: &str) -> Result<Client> {
         .context("failed to build GitHub API client")
 }
 
+fn installation_token_client(token: &str) -> Result<Client> {
+    Client::builder()
+        .default_headers(default_token_headers(token)?)
+        .timeout(Duration::from_secs(30))
+        .build()
+        .context("failed to build GitHub API client")
+}
+
 fn send_github_request(
     request: reqwest::blocking::RequestBuilder,
     api_name: &str,
@@ -622,6 +789,14 @@ fn send_github_request(
 }
 
 fn default_headers(jwt: &str) -> Result<HeaderMap> {
+    auth_headers(&format!("Bearer {jwt}"))
+}
+
+fn default_token_headers(token: &str) -> Result<HeaderMap> {
+    auth_headers(&format!("Bearer {token}"))
+}
+
+fn auth_headers(authorization: &str) -> Result<HeaderMap> {
     let mut headers = HeaderMap::new();
     headers.insert(
         USER_AGENT,
@@ -637,8 +812,7 @@ fn default_headers(jwt: &str) -> Result<HeaderMap> {
     );
     headers.insert(
         AUTHORIZATION,
-        HeaderValue::from_str(&format!("Bearer {jwt}"))
-            .context("failed to build authorization header")?,
+        HeaderValue::from_str(authorization).context("failed to build authorization header")?,
     );
     Ok(headers)
 }

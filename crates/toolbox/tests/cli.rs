@@ -255,6 +255,64 @@ fn github_app_run_exits_with_child_exit_code() {
     assert!(request.starts_with("post /app/installations/42/access_tokens "));
 }
 
+#[cfg(unix)]
+#[test]
+fn github_app_run_reuses_valid_cached_installation_token() {
+    let cache_dir = unique_temp_dir("toolbox-token-cache-test");
+    let (api_url, server) = token_cache_response_server();
+
+    let mut first = Command::cargo_bin("toolbox").expect("binary exists");
+    first
+        .args([
+            "github",
+            "app-run",
+            "--app-id",
+            "1",
+            "--installation-id",
+            "42",
+            "--api-url",
+            &api_url,
+            "--private-key",
+            TEST_RSA_PRIVATE_KEY,
+            "--",
+            "sh",
+            "-c",
+            "test \"$GH_TOKEN\" = cached-token",
+        ])
+        .env("XDG_CACHE_HOME", &cache_dir)
+        .assert()
+        .success();
+
+    let mut second = Command::cargo_bin("toolbox").expect("binary exists");
+    second
+        .args([
+            "github",
+            "app-run",
+            "--app-id",
+            "1",
+            "--installation-id",
+            "42",
+            "--api-url",
+            &api_url,
+            "--private-key",
+            "not-a-key",
+            "--",
+            "sh",
+            "-c",
+            "test \"$GH_TOKEN\" = cached-token",
+        ])
+        .env("XDG_CACHE_HOME", &cache_dir)
+        .assert()
+        .success();
+
+    let requests = server.join().expect("server thread completed");
+    assert_eq!(requests.len(), 2);
+    assert!(requests[0].starts_with("post /app/installations/42/access_tokens "));
+    assert!(requests[1].starts_with("get /installation/repositories "));
+
+    fs::remove_dir_all(cache_dir).expect("temporary cache directory removed");
+}
+
 #[test]
 fn github_app_run_requires_command_after_separator() {
     let mut cmd = Command::cargo_bin("toolbox").expect("binary exists");
@@ -421,6 +479,39 @@ fn one_token_response_server() -> (String, thread::JoinHandle<String>) {
             .write_all(response.as_bytes())
             .expect("test server writes response");
         request
+    });
+
+    (format!("http://{address}"), handle)
+}
+
+#[cfg(unix)]
+fn token_cache_response_server() -> (String, thread::JoinHandle<Vec<String>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("test server binds");
+    let address = listener.local_addr().expect("test server address");
+    let handle = thread::spawn(move || {
+        let mut requests = Vec::new();
+        for index in 0..2 {
+            let (mut stream, _) = listener.accept().expect("test server accepts");
+            let mut buffer = [0; 8192];
+            let bytes = stream.read(&mut buffer).expect("test server reads request");
+            requests.push(String::from_utf8_lossy(&buffer[..bytes]).to_ascii_lowercase());
+
+            let body = if index == 0 {
+                r#"{"token":"cached-token","expires_at":"2099-06-15T00:00:00Z","repository_selection":"selected","repositories":[],"permissions":{}}"#
+            } else {
+                r#"{"total_count":1,"repositories":[],"repository_selection":"selected"}"#
+            };
+            let status = if index == 0 { "201 Created" } else { "200 OK" };
+            let response = format!(
+                "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream
+                .write_all(response.as_bytes())
+                .expect("test server writes response");
+        }
+        requests
     });
 
     (format!("http://{address}"), handle)
