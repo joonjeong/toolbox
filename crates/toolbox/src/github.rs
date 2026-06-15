@@ -158,12 +158,12 @@ Use this command from coding agents or automation that need temporary GitHub rep
   Sign a GitHub App JWT, exchange it for an installation access token, and run a command with GH_TOKEN and GITHUB_TOKEN set for that process.
 
 Invocation forms:
-  toolbox github app-exec [OPTIONS] -- COMMAND [ARG]...
-  toolbox github-app-exec [OPTIONS] -- COMMAND [ARG]...
-  github-app-exec [OPTIONS] -- COMMAND [ARG]...    when symlinked to the toolbox binary
+  toolbox github app-run [OPTIONS] -- COMMAND [ARG]...
+  toolbox github-app-run [OPTIONS] -- COMMAND [ARG]...
+  github-app-run [OPTIONS] -- COMMAND [ARG]...    when symlinked to the toolbox binary
 
 Examples:
-  toolbox github app-exec \\
+  toolbox github app-run \\
     --app-id \"$GITHUB_APP_ID\" \\
     --repo OWNER/REPO \\
     --private-key-file /path/to/private-key.pem \\
@@ -181,9 +181,9 @@ Repository scoping:
   Use --repo OWNER/REPO to scope the token to one or more repositories. Repeat --repo for multiple repositories. When --installation-id is omitted, the first --repo value is also used to discover the installation. OWNER/REPO is accepted for user-facing clarity; only repository names are sent to GitHub's installation token API.
 
 Execution:
-  The command after -- is executed with GH_TOKEN and GITHUB_TOKEN set to the temporary installation token. The child process inherits stdin, stdout, and stderr, and toolbox exits with the child process exit code."
+  The command after -- is run directly with GH_TOKEN and GITHUB_TOKEN set to the temporary installation token. GitHub App credential environment variables are removed from the child environment. The child process inherits stdin, stdout, stderr, working directory, PATH, and other ordinary environment variables. Shell syntax such as pipes, redirects, aliases, and shell functions requires an explicit shell command, for example -- sh -c 'gh issue view 123 | jq .url'."
 )]
-pub struct AppExecArgs {
+pub struct AppRunArgs {
     /// GitHub App ID.
     ///
     /// Can also be set with GITHUB_APP_ID.
@@ -405,7 +405,7 @@ impl AppTokenConfig for AppAuthArgs {
     }
 }
 
-impl AppTokenConfig for AppExecArgs {
+impl AppTokenConfig for AppRunArgs {
     fn app_id(&self) -> u64 {
         self.app_id
     }
@@ -455,7 +455,7 @@ pub fn app_auth(args: AppAuthArgs) -> Result<()> {
     Ok(())
 }
 
-pub fn app_exec(args: AppExecArgs) -> Result<()> {
+pub fn app_run(args: AppRunArgs) -> Result<()> {
     let token = installation_token(&args)?.token;
     run_with_installation_token(&args.command, &token)
 }
@@ -682,6 +682,12 @@ fn run_with_installation_token(command: &[OsString], token: &str) -> Result<()> 
         .ok_or_else(|| anyhow!("missing command after --"))?;
     let status = Command::new(program)
         .args(args)
+        .env_remove("GITHUB_APP_ID")
+        .env_remove("GITHUB_APP_INSTALLATION_ID")
+        .env_remove("GITHUB_APP_PRIVATE_KEY")
+        .env_remove("GITHUB_APP_PRIVATE_KEY_FILE")
+        .env_remove("GITHUB_APP_PRIVATE_KEY_PATH")
+        .env_remove("GITHUB_API_URL")
         .env("GH_TOKEN", token)
         .env("GITHUB_TOKEN", token)
         .status()

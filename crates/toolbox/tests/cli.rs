@@ -21,10 +21,10 @@ fn shows_top_level_help() {
     cmd.arg("--help").assert().success().stdout(
         predicate::str::contains("github")
             .and(predicate::str::contains("github-app-auth"))
-            .and(predicate::str::contains("github-app-exec"))
+            .and(predicate::str::contains("github-app-run"))
             .and(predicate::str::contains("agent-skill"))
             .and(predicate::str::contains("toolbox github app-auth"))
-            .and(predicate::str::contains("toolbox github app-exec"))
+            .and(predicate::str::contains("toolbox github app-run"))
             .and(predicate::str::contains("github-app-auth ...")),
     );
 }
@@ -73,16 +73,16 @@ fn shows_github_app_auth_agent_usage() {
 }
 
 #[test]
-fn shows_github_app_exec_agent_usage() {
+fn shows_github_app_run_agent_usage() {
     let mut cmd = Command::cargo_bin("toolbox").expect("binary exists");
 
-    cmd.args(["github", "app-exec", "--help"])
+    cmd.args(["github", "app-run", "--help"])
         .assert()
         .success()
         .stdout(
             predicate::str::contains("Run a command with a GitHub App installation token")
-                .and(predicate::str::contains("toolbox github app-exec"))
-                .and(predicate::str::contains("github-app-exec"))
+                .and(predicate::str::contains("toolbox github app-run"))
+                .and(predicate::str::contains("github-app-run"))
                 .and(predicate::str::contains("GH_TOKEN"))
                 .and(predicate::str::contains("GITHUB_TOKEN"))
                 .and(predicate::str::contains("-- <COMMAND>"))
@@ -107,16 +107,16 @@ fn symlink_style_help_does_not_duplicate_subcommand_name() {
 
 #[cfg(unix)]
 #[test]
-fn github_app_exec_symlink_style_help_does_not_duplicate_subcommand_name() {
+fn github_app_run_symlink_style_help_does_not_duplicate_subcommand_name() {
     let mut cmd = std::process::Command::new(assert_cmd::cargo::cargo_bin("toolbox"));
-    cmd.arg0("github-app-exec");
+    cmd.arg0("github-app-run");
 
     let output = cmd.arg("--help").output().expect("command runs");
     assert!(output.status.success());
 
     let stdout = String::from_utf8(output.stdout).expect("stdout is utf-8");
-    assert!(stdout.contains("Usage: github-app-exec [OPTIONS]"));
-    assert!(!stdout.contains("github-app-exec github-app-exec [OPTIONS]"));
+    assert!(stdout.contains("Usage: github-app-run [OPTIONS]"));
+    assert!(!stdout.contains("github-app-run github-app-run [OPTIONS]"));
 }
 
 #[test]
@@ -192,13 +192,49 @@ fn github_app_auth_jwt_only_can_print_json() {
 
 #[cfg(unix)]
 #[test]
-fn github_app_exec_runs_command_with_installation_token_environment() {
+fn github_app_run_runs_command_with_installation_token_environment() {
     let (api_url, server) = one_token_response_server();
     let mut cmd = Command::cargo_bin("toolbox").expect("binary exists");
 
     cmd.args([
         "github",
-        "app-exec",
+        "app-run",
+        "--api-url",
+        &api_url,
+        "--",
+        "sh",
+        "-c",
+        "test \"$GH_TOKEN\" = test-token && \
+         test \"$GITHUB_TOKEN\" = test-token && \
+         test -z \"${GITHUB_APP_ID+x}\" && \
+         test -z \"${GITHUB_APP_INSTALLATION_ID+x}\" && \
+         test -z \"${GITHUB_APP_PRIVATE_KEY+x}\" && \
+         test \"$1\" = --body && \
+         test \"$2\" = Done",
+        "child-command",
+        "--body",
+        "Done",
+    ])
+    .env("GITHUB_APP_ID", "1")
+    .env("GITHUB_APP_INSTALLATION_ID", "42")
+    .env("GITHUB_APP_PRIVATE_KEY", TEST_RSA_PRIVATE_KEY)
+    .assert()
+    .success();
+
+    let request = server.join().expect("server thread completed");
+    assert!(request.starts_with("post /app/installations/42/access_tokens "));
+    assert!(request.contains("authorization: bearer "));
+}
+
+#[cfg(unix)]
+#[test]
+fn github_app_run_exits_with_child_exit_code() {
+    let (api_url, server) = one_token_response_server();
+    let mut cmd = Command::cargo_bin("toolbox").expect("binary exists");
+
+    cmd.args([
+        "github",
+        "app-run",
         "--app-id",
         "1",
         "--installation-id",
@@ -210,23 +246,22 @@ fn github_app_exec_runs_command_with_installation_token_environment() {
         "--",
         "sh",
         "-c",
-        "test \"$GH_TOKEN\" = test-token && test \"$GITHUB_TOKEN\" = test-token",
+        "exit 42",
     ])
     .assert()
-    .success();
+    .code(42);
 
     let request = server.join().expect("server thread completed");
     assert!(request.starts_with("post /app/installations/42/access_tokens "));
-    assert!(request.contains("authorization: bearer "));
 }
 
 #[test]
-fn github_app_exec_requires_command_after_separator() {
+fn github_app_run_requires_command_after_separator() {
     let mut cmd = Command::cargo_bin("toolbox").expect("binary exists");
 
     cmd.args([
         "github",
-        "app-exec",
+        "app-run",
         "--app-id",
         "1",
         "--repo",
@@ -240,12 +275,12 @@ fn github_app_exec_requires_command_after_separator() {
 }
 
 #[test]
-fn github_app_exec_accepts_command_options_after_separator() {
+fn github_app_run_accepts_command_options_after_separator() {
     let mut cmd = Command::cargo_bin("toolbox").expect("binary exists");
 
     cmd.args([
         "github",
-        "app-exec",
+        "app-run",
         "--app-id",
         "1",
         "--repo",

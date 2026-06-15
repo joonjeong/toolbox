@@ -16,11 +16,11 @@ The primary binary is `toolbox`. Commands can be used in three forms:
 
 ```sh
 toolbox github app-auth ...
-toolbox github app-exec ... -- COMMAND [ARG]...
+toolbox github app-run ... -- COMMAND [ARG]...
 toolbox github-app-auth ...
-toolbox github-app-exec ... -- COMMAND [ARG]...
+toolbox github-app-run ... -- COMMAND [ARG]...
 github-app-auth ... # when symlinked to the toolbox binary
-github-app-exec ... # when symlinked to the toolbox binary
+github-app-run ... # when symlinked to the toolbox binary
 ```
 
 ## GitHub App authentication
@@ -71,20 +71,34 @@ Public release downloads can be tested without authentication. GitHub App auth
 must be tested against a repository where the App is installed, even if the
 repository itself is public.
 
-`github app-exec` uses the same GitHub App authentication options, but runs a
+`github app-run` uses the same token minting inputs as `app-auth`, but runs a
 command with the temporary installation token set as both `GH_TOKEN` and
 `GITHUB_TOKEN`:
 
 ```sh
-toolbox github app-exec \
+toolbox github app-run \
   --app-id "$GITHUB_APP_ID" \
   --repo OWNER/REPO \
   --private-key-file /path/to/private-key.pem \
   -- gh pr comment 123 --body "Done"
 ```
 
-The command after `--` inherits stdin, stdout, and stderr. `toolbox` exits with
-the child process exit code, so it can be used directly in automation.
+The command after `--` inherits stdin, stdout, stderr, the current working
+directory, `PATH`, and ordinary environment variables. GitHub App credential
+environment variables are removed from the child environment, so the child only
+receives the scoped installation token. Shell syntax such as pipes, redirects,
+aliases, and shell functions requires an explicit shell command:
+
+```sh
+toolbox github app-run \
+  --app-id "$GITHUB_APP_ID" \
+  --repo OWNER/REPO \
+  --private-key-file /path/to/private-key.pem \
+  -- sh -c 'gh issue view 123 | jq .url'
+```
+
+`toolbox` exits with the child process exit code, so it can be used directly in
+automation.
 
 ## Agent skill
 
