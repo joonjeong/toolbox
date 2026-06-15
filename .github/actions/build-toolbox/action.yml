@@ -1,0 +1,43 @@
+name: Build toolbox
+description: Install the target toolchain and build the toolbox binary.
+
+inputs:
+  target:
+    description: Rust target triple to build.
+    required: true
+  build-tool:
+    description: Build command driver, either cargo or cargo-zigbuild.
+    required: true
+  toolbox-version:
+    description: TOOLBOX_VERSION value embedded by the build script.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ inputs.target }}
+
+    - name: Install Zig
+      if: ${{ inputs['build-tool'] == 'cargo-zigbuild' }}
+      uses: mlugg/setup-zig@v2
+
+    - name: Install cargo-zigbuild
+      if: ${{ inputs['build-tool'] == 'cargo-zigbuild' }}
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-zigbuild
+
+    - name: Build
+      shell: bash
+      env:
+        BUILD_TOOL: ${{ inputs['build-tool'] }}
+        TOOLBOX_VERSION: ${{ inputs['toolbox-version'] }}
+      run: |
+        if [[ "${BUILD_TOOL}" == "cargo-zigbuild" ]]; then
+          cargo zigbuild --release --target ${{ inputs.target }} --bin toolbox
+        else
+          cargo build --release --target ${{ inputs.target }} --bin toolbox
+        fi

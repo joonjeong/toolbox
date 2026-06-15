@@ -47,28 +47,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Install Zig
-        if: ${{ matrix.build_tool == 'cargo-zigbuild' }}
-        uses: mlugg/setup-zig@v2
-
-      - name: Install cargo-zigbuild
-        if: ${{ matrix.build_tool == 'cargo-zigbuild' }}
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-zigbuild
-
       - name: Build release target
-        env:
-          BUILD_TOOL: ${{ matrix.build_tool }}
-          TOOLBOX_VERSION: ci
-        run: |
-          if [[ "${BUILD_TOOL}" == "cargo-zigbuild" ]]; then
-            cargo zigbuild --release --target ${{ matrix.target }} --bin toolbox
-          else
-            cargo build --release --target ${{ matrix.target }} --bin toolbox
-          fi
+        uses: ./.github/actions/build-toolbox
+        with:
+          target: ${{ matrix.target }}
+          build-tool: ${{ matrix.build_tool }}
+          toolbox-version: ci
