@@ -313,6 +313,37 @@ fn github_app_run_reuses_valid_cached_installation_token() {
     fs::remove_dir_all(cache_dir).expect("temporary cache directory removed");
 }
 
+#[cfg(unix)]
+#[test]
+fn github_app_run_mints_token_when_cache_directory_is_unavailable() {
+    let (api_url, server) = one_token_response_server();
+    let mut cmd = Command::cargo_bin("toolbox").expect("binary exists");
+
+    cmd.args([
+        "github",
+        "app-run",
+        "--app-id",
+        "1",
+        "--installation-id",
+        "42",
+        "--api-url",
+        &api_url,
+        "--private-key",
+        TEST_RSA_PRIVATE_KEY,
+        "--",
+        "sh",
+        "-c",
+        "test \"$GH_TOKEN\" = test-token",
+    ])
+    .env_remove("XDG_CACHE_HOME")
+    .env_remove("HOME")
+    .assert()
+    .success();
+
+    let request = server.join().expect("server thread completed");
+    assert!(request.starts_with("post /app/installations/42/access_tokens "));
+}
+
 #[test]
 fn github_app_run_requires_command_after_separator() {
     let mut cmd = Command::cargo_bin("toolbox").expect("binary exists");

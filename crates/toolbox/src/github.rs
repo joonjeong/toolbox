@@ -325,7 +325,7 @@ struct TokenRequest {
 #[derive(Debug, Serialize)]
 struct TokenCacheKey {
     app_id: u64,
-    installation_id: Option<u64>,
+    installation_id: u64,
     api_url: String,
     repositories: Vec<String>,
     permissions: BTreeMap<String, String>,
@@ -546,40 +546,57 @@ fn installation_token(args: &impl AppTokenConfig) -> Result<TokenResponse> {
 }
 
 fn cached_or_fresh_installation_token(args: &impl AppTokenConfig) -> Result<TokenResponse> {
-    let cache_key = token_cache_key(args);
-    let cache_path = token_cache_path(&cache_key)?;
+    let cache_path = token_cache_path(args).ok();
 
-    if let Some(cached) = read_cached_token(&cache_path)? {
-        if cached_token_is_fresh(&cached)
-            && validate_cached_token(args.api_url(), &cached.token).is_ok()
-        {
-            return Ok(TokenResponse {
-                token: cached.token,
-                expires_at: cached.expires_at,
-                repository_selection: None,
-                repositories: Vec::new(),
-                permissions: BTreeMap::new(),
-            });
+    if let Some(cache_path) = cache_path.as_ref() {
+        if let Ok(Some(cached)) = read_cached_token(cache_path) {
+            if cached_token_is_fresh(&cached)
+                && validate_cached_token(args.api_url(), &cached.token).is_ok()
+            {
+                return Ok(TokenResponse {
+                    token: cached.token,
+                    expires_at: cached.expires_at,
+                    repository_selection: None,
+                    repositories: Vec::new(),
+                    permissions: BTreeMap::new(),
+                });
+            }
         }
     }
 
     let response = installation_token(args)?;
-    write_cached_token(&cache_path, &response)?;
+    if let Some(cache_path) = cache_path.as_ref() {
+        let _ = write_cached_token(cache_path, &response);
+    }
     Ok(response)
 }
 
-fn token_cache_key(args: &impl AppTokenConfig) -> TokenCacheKey {
-    TokenCacheKey {
+fn token_cache_key(args: &impl AppTokenConfig) -> Result<TokenCacheKey> {
+    let mut repositories = args.repos().to_vec();
+    repositories.sort();
+
+    Ok(TokenCacheKey {
         app_id: args.app_id(),
-        installation_id: args.installation_id(),
+        installation_id: resolve_cache_installation_id(args)?,
         api_url: args.api_url().trim_end_matches('/').to_string(),
-        repositories: args.repos().to_vec(),
+        repositories,
         permissions: permissions_map(args.permissions()),
-    }
+    })
 }
 
-fn token_cache_path(cache_key: &TokenCacheKey) -> Result<PathBuf> {
-    let encoded = serde_json::to_vec(cache_key).context("failed to serialize token cache key")?;
+fn resolve_cache_installation_id(args: &impl AppTokenConfig) -> Result<u64> {
+    if let Some(installation_id) = args.installation_id() {
+        return Ok(installation_id);
+    }
+
+    let jwt = create_jwt(args.app_id(), &read_private_key(args)?)?;
+    let client = github_client(&jwt)?;
+    resolve_installation_id(args, &client)
+}
+
+fn token_cache_path(args: &impl AppTokenConfig) -> Result<PathBuf> {
+    let cache_key = token_cache_key(args)?;
+    let encoded = serde_json::to_vec(&cache_key).context("failed to serialize token cache key")?;
     let digest = Sha256::digest(encoded);
     let file_name = format!(
         "{}.json",
@@ -941,8 +958,8 @@ impl std::str::FromStr for PermissionArg {
 #[cfg(test)]
 mod tests {
     use super::{
-        json_repository_names, permissions_map, repository_names, AppAuthArgs, OutputFormat,
-        PermissionArg, TokenRepository, TokenResponse,
+        json_repository_names, permissions_map, repository_names, token_cache_key, AppAuthArgs,
+        OutputFormat, PermissionArg, TokenRepository, TokenResponse,
     };
     use std::collections::BTreeMap;
     use std::path::PathBuf;
@@ -1035,6 +1052,25 @@ mod tests {
         assert_eq!(value["permissions"]["contents"], "read");
         assert_eq!(value["expires_at"], "2026-06-14T01:23:45Z");
         assert!(value.get("token").is_none());
+    }
+
+    #[test]
+    fn token_cache_key_sorts_repository_scope() {
+        let mut first = test_args();
+        first.repos = vec![
+            "joonjeong/toolbox".to_string(),
+            "joonjeong/other".to_string(),
+        ];
+        let mut second = test_args();
+        second.repos = vec![
+            "joonjeong/other".to_string(),
+            "joonjeong/toolbox".to_string(),
+        ];
+
+        let first_key = token_cache_key(&first).expect("cache key");
+        let second_key = token_cache_key(&second).expect("cache key");
+
+        assert_eq!(first_key.repositories, second_key.repositories);
     }
 
     fn test_args() -> AppAuthArgs {
