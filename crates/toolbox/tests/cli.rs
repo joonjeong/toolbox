@@ -88,6 +88,7 @@ fn shows_github_app_run_agent_usage() {
                 .and(predicate::str::contains("github-app-run"))
                 .and(predicate::str::contains("GH_TOKEN"))
                 .and(predicate::str::contains("GITHUB_TOKEN"))
+                .and(predicate::str::contains("--git-credentials"))
                 .and(predicate::str::contains("-- <COMMAND>"))
                 .and(predicate::str::contains("--repo <OWNER/REPO>"))
                 .and(predicate::str::contains("only repository names are sent")),
@@ -227,6 +228,54 @@ fn github_app_run_runs_command_with_installation_token_environment() {
     let request = server.join().expect("server thread completed");
     assert!(request.starts_with("post /app/installations/42/access_tokens "));
     assert!(request.contains("authorization: bearer "));
+}
+
+#[cfg(unix)]
+#[test]
+fn github_app_run_can_configure_child_only_git_credentials() {
+    let (api_url, server) = one_token_response_server();
+    let output_dir = unique_temp_dir("toolbox-git-credentials-test");
+    fs::create_dir(&output_dir).expect("temporary output directory created");
+    let output_file = output_dir.join("credentials");
+    let mut cmd = Command::cargo_bin("toolbox").expect("binary exists");
+
+    cmd.args([
+        "github",
+        "app-run",
+        "--api-url",
+        &api_url,
+        "--git-credentials",
+        "--",
+        "sh",
+        "-c",
+        "test \"$GIT_TERMINAL_PROMPT\" = 0 && \
+         test \"$GIT_CONFIG_COUNT\" = 1 && \
+         test \"$GIT_CONFIG_KEY_0\" = credential.helper && \
+         helper=$GIT_CONFIG_VALUE_0 && \
+         api_host=${2#http://} && \
+         api_host=${api_host%%:*} && \
+         printf 'protocol=https\\nhost=%s\\n\\n' \"$api_host\" | \
+           GIT_CONFIG_SYSTEM=/dev/null GIT_CONFIG_GLOBAL=/dev/null git credential fill > \"$1\" && \
+         grep -qx username=x-access-token \"$1\" && \
+         grep -qx password=test-token \"$1\" && \
+         test -z \"$(printf 'protocol=https\\nhost=example.com\\n\\n' | \"$helper\" get)\" && \
+         test -z \"$(printf 'protocol=http\\nhost=%s\\n\\n' \"$api_host\" | \"$helper\" get)\"",
+        "child-command",
+        output_file.to_str().expect("utf-8 path"),
+        &api_url,
+    ])
+    .env("GITHUB_APP_ID", "1")
+    .env("GITHUB_APP_INSTALLATION_ID", "42")
+    .env("GITHUB_APP_PRIVATE_KEY", TEST_RSA_PRIVATE_KEY)
+    .env_remove("GIT_CONFIG_COUNT")
+    .env_remove("GIT_CONFIG_KEY_0")
+    .env_remove("GIT_CONFIG_VALUE_0")
+    .assert()
+    .success();
+
+    let request = server.join().expect("server thread completed");
+    assert!(request.starts_with("post /app/installations/42/access_tokens "));
+    fs::remove_dir_all(output_dir).expect("temporary output directory removed");
 }
 
 #[cfg(unix)]

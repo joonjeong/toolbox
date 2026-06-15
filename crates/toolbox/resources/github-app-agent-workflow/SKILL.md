@@ -155,12 +155,36 @@ Keep grouped command blocks short and task-focused. Start a new `app-run`
 invocation when repository scope changes, privileges should be narrower, or a
 command fails due to expiration.
 
+## Git HTTPS Remotes
+
+Git does not automatically read `GH_TOKEN` or `GITHUB_TOKEN` as HTTPS remote
+credentials. When running `git clone`, `git fetch`, `git ls-remote`, or similar
+commands against GitHub HTTPS URLs, pass `--git-credentials`:
+
+```sh
+toolbox github app-run \
+  --repo OWNER/REPO \
+  --permission contents=read \
+  --app-id "$GITHUB_APP_ID" \
+  --private-key-file /path/to/private-key.pem \
+  --git-credentials \
+  -- git ls-remote --heads https://github.com/OWNER/REPO.git
+```
+
+`--git-credentials` installs a temporary child-only Git credential helper. The
+helper reads the installation token from the child `GITHUB_TOKEN`, responds only
+to HTTPS credential requests for the GitHub host, and uses username
+`x-access-token`. It also disables interactive Git credential prompts for the
+child command, so failed authentication exits instead of hanging.
+
 ## Environment Boundary
 
 The child command receives:
 
 - `GH_TOKEN` set to the temporary installation token
 - `GITHUB_TOKEN` set to the same temporary installation token
+- when `--git-credentials` is passed, child-only `GIT_CONFIG_*` values pointing
+  at a temporary credential helper and `GIT_TERMINAL_PROMPT=0`
 - ordinary inherited environment such as `PATH`, locale, and working directory
 
 The child command does not receive these GitHub App credential variables:
@@ -242,6 +266,9 @@ JSON output is diagnostic-first and never includes the installation token.
 - `--installation-id`: use a known installation ID and skip repository
   installation discovery.
 - `--permission key=value`: repeat to request narrower token permissions.
+- `--git-credentials`: configure child-only Git HTTPS credentials for GitHub
+  remotes. Use this for `git clone`, `git fetch`, `git ls-remote`, and similar
+  commands against HTTPS URLs.
 - `--format json` and `--jwt-only` belong to `app-auth`, not `app-run`.
 
 ## Common Failure Cases
@@ -253,6 +280,9 @@ JSON output is diagnostic-first and never includes the installation token.
   or narrower permissions, or update the App installation permissions first.
 - The token expired or GitHub rejects a cached token. `app-run` should
   automatically mint a fresh scoped token.
+- Git over HTTPS failed with a username prompt error such as `could not read
+  Username`. Rerun with `--git-credentials`; `GH_TOKEN` and `GITHUB_TOKEN` alone
+  are not Git credential helpers.
 - The private key path or environment variable is missing. Check
   `--private-key-file`, `--private-key-path`, `GITHUB_APP_PRIVATE_KEY_FILE`, and
   `GITHUB_APP_PRIVATE_KEY_PATH`.
